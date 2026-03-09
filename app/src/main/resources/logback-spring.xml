@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<springProperty scope="context" name="appName" source="spring.application.name" defaultValue="app"/>
+	<property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+
+	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<customFields>{"app":"${appName}"}</customFields>
+		</encoder>
+	</appender>
+
+	<appender name="APP_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${LOG_DIR}/app.log</file>
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<customFields>{"app":"${appName}"}</customFields>
+		</encoder>
+		<rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+			<fileNamePattern>${LOG_DIR}/app.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+			<maxFileSize>20MB</maxFileSize>
+			<maxHistory>14</maxHistory>
+			<totalSizeCap>2GB</totalSizeCap>
+		</rollingPolicy>
+	</appender>
+
+	<appender name="PIPELINE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${LOG_DIR}/pipeline.log</file>
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<customFields>{"app":"${appName}"}</customFields>
+		</encoder>
+		<rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+			<fileNamePattern>${LOG_DIR}/pipeline.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+			<maxFileSize>20MB</maxFileSize>
+			<maxHistory>14</maxHistory>
+			<totalSizeCap>2GB</totalSizeCap>
+		</rollingPolicy>
+	</appender>
+
+	<appender name="INTEGRATION_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${LOG_DIR}/integration.log</file>
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<customFields>{"app":"${appName}"}</customFields>
+		</encoder>
+		<rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+			<fileNamePattern>${LOG_DIR}/integration.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+			<maxFileSize>20MB</maxFileSize>
+			<maxHistory>14</maxHistory>
+			<totalSizeCap>2GB</totalSizeCap>
+		</rollingPolicy>
+	</appender>
+
+	<appender name="ASYNC_APP" class="ch.qos.logback.classic.AsyncAppender">
+		<queueSize>2048</queueSize>
+		<discardingThreshold>0</discardingThreshold>
+		<appender-ref ref="APP_FILE"/>
+	</appender>
+
+	<appender name="ASYNC_PIPELINE" class="ch.qos.logback.classic.AsyncAppender">
+		<queueSize>2048</queueSize>
+		<discardingThreshold>0</discardingThreshold>
+		<appender-ref ref="PIPELINE_FILE"/>
+	</appender>
+
+	<appender name="ASYNC_INTEGRATION" class="ch.qos.logback.classic.AsyncAppender">
+		<queueSize>2048</queueSize>
+		<discardingThreshold>0</discardingThreshold>
+		<appender-ref ref="INTEGRATION_FILE"/>
+	</appender>
+
+	<logger name="com.nexus.press.app.service.news" level="INFO" additivity="true">
+		<appender-ref ref="ASYNC_PIPELINE"/>
+	</logger>
+	<logger name="com.nexus.press.app.service.queue" level="INFO" additivity="true">
+		<appender-ref ref="ASYNC_PIPELINE"/>
+	</logger>
+	<logger name="com.nexus.press.app.service.scheduler" level="INFO" additivity="true">
+		<appender-ref ref="ASYNC_PIPELINE"/>
+	</logger>
+	<logger name="com.nexus.press.app.service.delivery" level="INFO" additivity="true">
+		<appender-ref ref="ASYNC_PIPELINE"/>
+	</logger>
+	<logger name="com.nexus.press.app.config.WebClientConfig" level="INFO" additivity="true">
+		<appender-ref ref="ASYNC_INTEGRATION"/>
+	</logger>
+	<logger name="com.nexus.press.app.config.ReactorHooksConfig" level="INFO" additivity="true">
+		<appender-ref ref="ASYNC_INTEGRATION"/>
+	</logger>
+
+	<root level="INFO">
+		<appender-ref ref="CONSOLE"/>
+		<appender-ref ref="ASYNC_APP"/>
+	</root>
+</configuration>
