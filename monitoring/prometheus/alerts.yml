@@ -1,0 +1,43 @@
+groups:
+  - name: press-nexus-alerts
+    rules:
+      - alert: PressNexusHighQueueDepth
+        expr: max by (application, queue) (press_queue_depth) > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue depth is high"
+          description: "Queue {{ $labels.queue }} in {{ $labels.application }} is above 1000 for 10m."
+
+      - alert: PressNexusPipelineFailures
+        expr: sum by (application, stage) (increase(press_pipeline_stage_events_total{outcome="failure"}[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline stage failures detected"
+          description: "Stage {{ $labels.stage }} in {{ $labels.application }} has failures in the last 10 minutes."
+
+      - alert: PressNexusExternalHttpFailureRatioHigh
+        expr: |
+          (
+            sum by (application, client) (rate(press_http_client_requests_total{outcome=~"failure|client_error|server_error"}[10m]))
+            /
+            sum by (application, client) (rate(press_http_client_requests_total[10m]))
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "External HTTP failure ratio is high"
+          description: "Client {{ $labels.client }} in {{ $labels.application }} has >20% failed/error requests for 10m."
+
+      - alert: PressNexusSchedulerFailures
+        expr: sum by (application, job) (increase(press_jobs_runs_total{outcome="failure"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler or job failures detected"
+          description: "Job {{ $labels.job }} in {{ $labels.application }} failed in the last 15 minutes."

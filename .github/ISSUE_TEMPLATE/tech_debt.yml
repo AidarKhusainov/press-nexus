@@ -1,0 +1,43 @@
+name: Tech Debt
+description: Track engineering debt with owner and payoff plan.
+title: "debt: "
+labels: ["tech-debt"]
+body:
+  - type: textarea
+    id: debt
+    attributes:
+      label: Debt description
+      description: What is the debt and where is it located?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk level
+      options:
+        - low
+        - medium
+        - high
+    validations:
+      required: true
+
+  - type: textarea
+    id: payoff
+    attributes:
+      label: Payoff plan
+      description: Implementation approach and estimated effort.
+    validations:
+      required: true
+
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      placeholder: @username
+
+  - type: input
+    id: target
+    attributes:
+      label: Target date
+      placeholder: YYYY-MM-DD

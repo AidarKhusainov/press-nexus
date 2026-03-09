@@ -1,0 +1,40 @@
+name: Feature Request
+description: Propose a change with value, scope, and risks.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user/business problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe expected behavior and boundaries.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: List options and why they are not selected.
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and mitigations
+      description: Include compatibility, performance, and operational risk.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-check
+      options:
+        - label: I checked existing issues/roadmap.
+        - label: I can provide acceptance criteria.

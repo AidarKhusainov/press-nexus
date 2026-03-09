@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://press-nexus.local/contracts/events/feedback-event-v1.schema.json",
+  "title": "FeedbackEventV1",
+  "type": "object",
+  "required": ["version", "chatId", "eventType", "occurredAt"],
+  "properties": {
+    "version": { "type": "string", "const": "v1" },
+    "chatId": { "type": "string", "minLength": 1 },
+    "eventType": {
+      "type": "string",
+      "enum": ["useful", "noise", "anxious", "click", "open", "unsubscribe"]
+    },
+    "newsId": { "type": "string" },
+    "eventValue": { "type": "string" },
+    "payload": { "type": "object", "additionalProperties": true },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

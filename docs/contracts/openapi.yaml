@@ -1,0 +1,310 @@
+openapi: 3.0.3
+info:
+  title: Press Nexus API
+  version: 1.0.0
+  description: HTTP API contracts for Press Nexus.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Brief
+  - name: Feedback
+  - name: ProductReport
+  - name: Similarity
+  - name: TelegramWebhook
+paths:
+  /api/brief/daily:
+    get:
+      operationId: getDailyBrief
+      tags: [Brief]
+      summary: Build daily brief in JSON
+      parameters:
+        - in: query
+          name: hours
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 20, default: 7 }
+        - in: query
+          name: lang
+          schema: { type: string, example: ru, default: ru }
+      responses:
+        '200':
+          description: Daily brief
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyBrief'
+  /api/brief/daily/text:
+    get:
+      operationId: getDailyBriefText
+      tags: [Brief]
+      summary: Build daily brief in plain text
+      parameters:
+        - in: query
+          name: hours
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 20, default: 7 }
+        - in: query
+          name: lang
+          schema: { type: string, example: ru, default: ru }
+      responses:
+        '200':
+          description: Text summary
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/brief/daily/send:
+    post:
+      operationId: sendDailyBriefNow
+      tags: [Brief]
+      summary: Trigger immediate digest delivery
+      responses:
+        '200':
+          description: Delivery result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyBriefSendResponse'
+  /api/feedback:
+    post:
+      operationId: postFeedbackEvent
+      tags: [Feedback]
+      summary: Ingest feedback event
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '200':
+          description: Ingestion status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiStatusResponse'
+  /api/analytics/product-report/daily:
+    get:
+      operationId: getDailyProductReport
+      tags: [ProductReport]
+      summary: Build daily product report in JSON
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Product report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDailyReport'
+  /api/analytics/product-report/daily/text:
+    get:
+      operationId: getDailyProductReportText
+      tags: [ProductReport]
+      summary: Build daily product report in plain text
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Product report text
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/news/{id}/similar:
+    get:
+      operationId: getSimilarNews
+      tags: [Similarity]
+      summary: Return top similar news items
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: topN
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: minScore
+          schema: { type: number, format: double, minimum: 0, maximum: 1 }
+      responses:
+        '200':
+          description: Similar items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimilarItem'
+  /api/clusters:
+    get:
+      operationId: getClusters
+      tags: [Similarity]
+      summary: Return clusters by similarity threshold
+      parameters:
+        - in: query
+          name: threshold
+          schema: { type: number, format: double, minimum: 0, maximum: 1 }
+      responses:
+        '200':
+          description: Clusters list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cluster'
+  /api/news/{id}/cluster:
+    get:
+      operationId: getClusterByNewsId
+      tags: [Similarity]
+      summary: Return cluster for a specific news item
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: threshold
+          schema: { type: number, format: double, minimum: 0, maximum: 1 }
+      responses:
+        '200':
+          description: Cluster details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+  /api/telegram/webhook:
+    post:
+      operationId: postTelegramWebhook
+      tags: [TelegramWebhook]
+      summary: Process Telegram webhook update
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramWebhookUpdate'
+      responses:
+        '200':
+          description: Processing result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiStatusResponse'
+components:
+  schemas:
+    DailyBriefSendResponse:
+      type: object
+      required: [sentChats]
+      properties:
+        sentChats:
+          type: integer
+          minimum: 0
+    DailyBrief:
+      type: object
+      required: [generatedAt, from, to, language, items]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        language: { type: string }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyBriefItem'
+    DailyBriefItem:
+      type: object
+      required: [newsId, title, url, media, eventAt, importance, whatHappened, whyImportant, whatNext]
+      properties:
+        newsId: { type: string }
+        title: { type: string }
+        url: { type: string }
+        media: { type: string }
+        eventAt: { type: string, format: date-time }
+        importance: { type: string, enum: [MUST_KNOW, GOOD_TO_KNOW] }
+        whatHappened: { type: string }
+        whyImportant: { type: string }
+        whatNext: { type: string }
+    ProductDailyReport:
+      type: object
+      required:
+        [reportDate, from, to, deliveryUsers, feedbackEvents, feedbackUsers, usefulCount, noiseCount,
+         anxiousCount, usefulRatePct, noiseRatePct, feedbackCtrPct, premiumIntentEvents, premiumIntentUsers,
+         premiumIntentPct, d1CohortSize, d1RetainedUsers, d1RetentionPct, d7CohortSize, d7RetainedUsers,
+         d7RetentionPct]
+      properties:
+        reportDate: { type: string, format: date }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        deliveryUsers: { type: integer }
+        feedbackEvents: { type: integer }
+        feedbackUsers: { type: integer }
+        usefulCount: { type: integer }
+        noiseCount: { type: integer }
+        anxiousCount: { type: integer }
+        usefulRatePct: { type: number, format: double }
+        noiseRatePct: { type: number, format: double }
+        feedbackCtrPct: { type: number, format: double }
+        premiumIntentEvents: { type: integer }
+        premiumIntentUsers: { type: integer }
+        premiumIntentPct: { type: number, format: double }
+        d1CohortSize: { type: integer }
+        d1RetainedUsers: { type: integer }
+        d1RetentionPct: { type: number, format: double }
+        d7CohortSize: { type: integer }
+        d7RetainedUsers: { type: integer }
+        d7RetentionPct: { type: number, format: double }
+    SimilarItem:
+      type: object
+      required: [id, score]
+      properties:
+        id: { type: string }
+        score: { type: number, format: double }
+    Cluster:
+      type: object
+      required: [ids, representativeId]
+      properties:
+        ids:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        representativeId: { type: string }
+    FeedbackRequest:
+      type: object
+      required: [chatId, eventType]
+      properties:
+        chatId:
+          type: string
+        eventType:
+          type: string
+          description: Feedback event token (for example useful, noise, anxious, click, open, unsubscribe).
+        newsId:
+          type: string
+        eventValue:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    TelegramWebhookUpdate:
+      type: object
+      additionalProperties: true
+    ApiStatusResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string

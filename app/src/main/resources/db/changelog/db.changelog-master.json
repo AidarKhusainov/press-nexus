@@ -1,0 +1,383 @@
+{
+  "databaseChangeLog": [
+    {
+      "changeSet": {
+        "id": "001-initial-schema-json",
+        "author": "Khusainov Aidar",
+        "validCheckSum": [
+          "9:297b866785149cca443e9dbdfb6ae372"
+        ],
+        "changes": [
+          { "sql": { "comment": "Extensions: pgvector + pgcrypto", "sql": "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pgcrypto;" }},
+
+          { "createTable": {
+            "tableName": "news",
+            "remarks": "Основная сущность новости и её метаданные",
+            "columns": [
+              { "column": { "name": "id", "type": "text", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "news_pk" }, "remarks": "Внутренний идентификатор новости" }},
+              { "column": { "name": "media", "type": "text", "constraints": { "nullable": false }, "remarks": "Источник/платформа новости (enum Media)" }},
+              { "column": { "name": "external_id", "type": "text", "remarks": "ID новости у источника (если есть)" }},
+              { "column": { "name": "url", "type": "text", "constraints": { "nullable": false }, "remarks": "Уникальная ссылка на новость" }},
+              { "column": { "name": "title", "type": "text", "constraints": { "nullable": false }, "remarks": "Заголовок новости" }},
+              { "column": { "name": "author", "type": "text", "remarks": "Автор новости (если известен)" }},
+              { "column": { "name": "language", "type": "text", "remarks": "Язык новости (ISO)" }},
+              { "column": { "name": "published_at", "type": "timestamp with time zone", "remarks": "Дата/время публикации в источнике" }},
+              { "column": { "name": "fetched_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата/время получения системой" }},
+              { "column": { "name": "content_raw", "type": "text", "remarks": "Исходный контент (сырые данные)" }},
+              { "column": { "name": "content_clean", "type": "text", "remarks": "Очищенный/нормализованный контент" }},
+              { "column": { "name": "content_hash", "type": "text", "constraints": { "nullable": false, "unique": true }, "remarks": "Хеш контента для дедупликации" }},
+              { "column": { "name": "status_content", "type": "text", "defaultValue": "PENDING", "constraints": { "nullable": false }, "remarks": "Статус получения/нормализации контента (PENDING/IN_PROGRESS/DONE/FAILED)" }},
+              { "column": { "name": "status_embedding", "type": "text", "defaultValue": "PENDING", "constraints": { "nullable": false }, "remarks": "Статус расчёта эмбеддинга" }},
+              { "column": { "name": "status_summary", "type": "text", "defaultValue": "PENDING", "constraints": { "nullable": false }, "remarks": "Статус суммаризации" }},
+              { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания записи" }},
+              { "column": { "name": "updated_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата последнего обновления записи" }}
+            ]
+          }},
+          { "addUniqueConstraint": { "tableName": "news", "columnNames": "url", "constraintName": "news_url_uq" }},
+          { "createIndex": { "tableName": "news", "indexName": "news_published_at_idx", "columns": [ { "column": { "name": "published_at", "descending": true }} ] }},
+          { "sql": { "comment": "Partial unique for (media, external_id) when external_id is not null", "sql": "CREATE UNIQUE INDEX IF NOT EXISTS news_media_external_id_uq ON news(media, external_id) WHERE external_id IS NOT NULL;" }},
+
+          { "createTable": {
+            "tableName": "category",
+            "remarks": "Категории (иерархия) для группировки новостей",
+            "columns": [
+              { "column": { "name": "id", "type": "uuid", "defaultValueComputed": "gen_random_uuid()", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "category_pk" }, "remarks": "Идентификатор категории" }},
+              { "column": { "name": "slug", "type": "text", "constraints": { "nullable": false, "unique": true }, "remarks": "Уникальный человекочитаемый код категории" }},
+              { "column": { "name": "name", "type": "text", "constraints": { "nullable": false }, "remarks": "Название категории" }},
+              { "column": { "name": "parent_id", "type": "uuid", "remarks": "Родительская категория (для иерархии)" }},
+              { "column": { "name": "description", "type": "text", "remarks": "Описание категории" }},
+              { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания записи категории" }}
+            ]
+          }},
+          { "addForeignKeyConstraint": { "constraintName": "category_parent_fk", "baseTableName": "category", "baseColumnNames": "parent_id", "referencedTableName": "category", "referencedColumnNames": "id", "onDelete": "SET NULL" }},
+
+          { "createTable": {
+            "tableName": "news_category",
+            "remarks": "Связь новости с категориями (многие-ко-многим)",
+            "columns": [
+              { "column": { "name": "news_id", "type": "text", "constraints": { "nullable": false }, "remarks": "Идентификатор новости (ссылка на news.id)" }},
+              { "column": { "name": "category_id", "type": "uuid", "constraints": { "nullable": false }, "remarks": "Идентификатор категории" }}
+            ]
+          }},
+          { "addPrimaryKey": { "tableName": "news_category", "columnNames": "news_id, category_id", "constraintName": "news_category_pk" }},
+          { "addForeignKeyConstraint": { "constraintName": "news_category_news_fk", "baseTableName": "news_category", "baseColumnNames": "news_id", "referencedTableName": "news", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+          { "addForeignKeyConstraint": { "constraintName": "news_category_category_fk", "baseTableName": "news_category", "baseColumnNames": "category_id", "referencedTableName": "category", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+
+          { "createTable": {
+            "tableName": "tag",
+            "remarks": "Теги (плоский словарь)",
+            "columns": [
+              { "column": { "name": "id", "type": "uuid", "defaultValueComputed": "gen_random_uuid()", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "tag_pk" }, "remarks": "Идентификатор тега" }},
+              { "column": { "name": "slug", "type": "text", "constraints": { "nullable": false, "unique": true }, "remarks": "Уникальный человекочитаемый код тега" }},
+              { "column": { "name": "name", "type": "text", "constraints": { "nullable": false }, "remarks": "Название тега" }},
+              { "column": { "name": "description", "type": "text", "remarks": "Описание тега" }},
+              { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания записи тега" }}
+            ]
+          }},
+
+          { "createTable": {
+            "tableName": "news_tag",
+            "remarks": "Связь новости с тегами (многие-ко-многим)",
+            "columns": [
+              { "column": { "name": "news_id", "type": "text", "constraints": { "nullable": false }, "remarks": "Идентификатор новости (ссылка на news.id)" }},
+              { "column": { "name": "tag_id", "type": "uuid", "constraints": { "nullable": false }, "remarks": "Идентификатор тега" }}
+            ]
+          }},
+          { "addPrimaryKey": { "tableName": "news_tag", "columnNames": "news_id, tag_id", "constraintName": "news_tag_pk" }},
+          { "addForeignKeyConstraint": { "constraintName": "news_tag_news_fk", "baseTableName": "news_tag", "baseColumnNames": "news_id", "referencedTableName": "news", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+          { "addForeignKeyConstraint": { "constraintName": "news_tag_tag_fk", "baseTableName": "news_tag", "baseColumnNames": "tag_id", "referencedTableName": "tag", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+
+          { "createTable": {
+            "tableName": "news_embedding",
+            "remarks": "Эмбеддинги новостей в pgvector (VECTOR(768))",
+            "columns": [
+              { "column": { "name": "news_id", "type": "text", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "news_embedding_pk" }, "remarks": "Идентификатор новости (ссылка на news.id)" }},
+              { "column": { "name": "embedding", "type": "vector(768)", "constraints": { "nullable": false }, "remarks": "Вектор контента (768 измерений)" }},
+              { "column": { "name": "model", "type": "text", "defaultValue": "nomic-embed-text", "constraints": { "nullable": false }, "remarks": "Название модели эмбеддингов" }},
+              { "column": { "name": "metric", "type": "text", "defaultValue": "cosine", "constraints": { "nullable": false }, "remarks": "Метрика близости (cosine/l2/ip)" }}
+            ]
+          }},
+          { "addForeignKeyConstraint": { "constraintName": "news_embedding_news_fk", "baseTableName": "news_embedding", "baseColumnNames": "news_id", "referencedTableName": "news", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+          { "sql": { "comment": "IVFFLAT cosine index on embedding (lists=100)", "sql": "CREATE INDEX IF NOT EXISTS news_embedding_embedding_ivfflat ON news_embedding USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);" }},
+
+          { "createTable": {
+            "tableName": "cluster",
+            "remarks": "Группы похожих новостей (кластеры)",
+            "columns": [
+              { "column": { "name": "id", "type": "uuid", "defaultValueComputed": "gen_random_uuid()", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "cluster_pk" }, "remarks": "Идентификатор кластера" }},
+              { "column": { "name": "representative_news_id", "type": "text", "remarks": "ID репрезентативной новости кластера" }},
+              { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания кластера" }}
+            ]
+          }},
+          { "addForeignKeyConstraint": { "constraintName": "cluster_representative_news_fk", "baseTableName": "cluster", "baseColumnNames": "representative_news_id", "referencedTableName": "news", "referencedColumnNames": "id", "onDelete": "SET NULL" }},
+
+          { "createTable": {
+            "tableName": "cluster_membership",
+            "remarks": "Состав кластера: новости, принадлежащие кластеру",
+            "columns": [
+              { "column": { "name": "cluster_id", "type": "uuid", "constraints": { "nullable": false }, "remarks": "Идентификатор кластера" }},
+              { "column": { "name": "news_id", "type": "text", "constraints": { "nullable": false }, "remarks": "Идентификатор новости (ссылка на news.id)" }}
+            ]
+          }},
+          { "addPrimaryKey": { "tableName": "cluster_membership", "columnNames": "cluster_id, news_id", "constraintName": "cluster_membership_pk" }},
+          { "addForeignKeyConstraint": { "constraintName": "cluster_membership_cluster_fk", "baseTableName": "cluster_membership", "baseColumnNames": "cluster_id", "referencedTableName": "cluster", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+          { "addForeignKeyConstraint": { "constraintName": "cluster_membership_news_fk", "baseTableName": "cluster_membership", "baseColumnNames": "news_id", "referencedTableName": "news", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+
+          { "createTable": {
+            "tableName": "news_summary",
+            "remarks": "Суммаризации отдельных новостей",
+            "columns": [
+              { "column": { "name": "news_id", "type": "text", "constraints": { "nullable": false }, "remarks": "Идентификатор новости (ссылка на news.id)" }},
+              { "column": { "name": "model", "type": "text", "constraints": { "nullable": false }, "remarks": "Модель/подход суммаризации" }},
+              { "column": { "name": "lang", "type": "text", "constraints": { "nullable": false }, "remarks": "Язык суммаризации" }},
+              { "column": { "name": "summary", "type": "text", "constraints": { "nullable": false }, "remarks": "Текст суммаризации" }},
+              { "column": { "name": "prompt_hash", "type": "text", "remarks": "Хеш промпта/версии для воспроизводимости" }},
+              { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания записи суммаризации" }}
+            ]
+          }},
+          { "addPrimaryKey": { "tableName": "news_summary", "columnNames": "news_id, model, lang", "constraintName": "news_summary_pk" }},
+          { "addForeignKeyConstraint": { "constraintName": "news_summary_news_fk", "baseTableName": "news_summary", "baseColumnNames": "news_id", "referencedTableName": "news", "referencedColumnNames": "id", "onDelete": "CASCADE" }},
+
+          { "createTable": {
+            "tableName": "cluster_summary",
+            "remarks": "Суммаризации кластеров новостей",
+            "columns": [
+              { "column": { "name": "cluster_id", "type": "uuid", "constraints": { "nullable": false }, "remarks": "Идентификатор кластера" }},
+              { "column": { "name": "model", "type": "text", "constraints": { "nullable": false }, "remarks": "Модель/подход суммаризации" }},
+              { "column": { "name": "lang", "type": "text", "constraints": { "nullable": false }, "remarks": "Язык суммаризации" }},
+              { "column": { "name": "summary", "type": "text", "constraints": { "nullable": false }, "remarks": "Текст суммаризации" }},
+              { "column": { "name": "prompt_hash", "type": "text", "remarks": "Хеш промпта/версии для воспроизводимости" }},
+              { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания записи суммаризации по кластеру" }}
+            ]
+          }},
+          { "addPrimaryKey": { "tableName": "cluster_summary", "columnNames": "cluster_id, model, lang", "constraintName": "cluster_summary_pk" }},
+          { "addForeignKeyConstraint": { "constraintName": "cluster_summary_cluster_fk", "baseTableName": "cluster_summary", "baseColumnNames": "cluster_id", "referencedTableName": "cluster", "referencedColumnNames": "id", "onDelete": "CASCADE" }}
+        ]
+      }
+    },
+    {
+      "changeSet": {
+        "id": "002-news-status-columns-backfill",
+        "author": "Khusainov Aidar",
+        "changes": [
+          {
+            "sql": {
+              "comment": "Backfill status columns for old databases where initial schema was applied without these fields",
+              "sql": "ALTER TABLE news ADD COLUMN IF NOT EXISTS status_content text; ALTER TABLE news ADD COLUMN IF NOT EXISTS status_embedding text; ALTER TABLE news ADD COLUMN IF NOT EXISTS status_summary text; UPDATE news SET status_content = 'PENDING' WHERE status_content IS NULL; UPDATE news SET status_embedding = 'PENDING' WHERE status_embedding IS NULL; UPDATE news SET status_summary = 'PENDING' WHERE status_summary IS NULL; ALTER TABLE news ALTER COLUMN status_content SET DEFAULT 'PENDING'; ALTER TABLE news ALTER COLUMN status_embedding SET DEFAULT 'PENDING'; ALTER TABLE news ALTER COLUMN status_summary SET DEFAULT 'PENDING'; ALTER TABLE news ALTER COLUMN status_content SET NOT NULL; ALTER TABLE news ALTER COLUMN status_embedding SET NOT NULL; ALTER TABLE news ALTER COLUMN status_summary SET NOT NULL;"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "changeSet": {
+        "id": "003-user-profile-and-feedback-schema",
+        "author": "Khusainov Aidar",
+        "changes": [
+          {
+            "createTable": {
+              "tableName": "users",
+              "remarks": "Профиль пользователя Telegram для персонализации и доставки дайджеста",
+              "columns": [
+                { "column": { "name": "id", "type": "uuid", "defaultValueComputed": "gen_random_uuid()", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "users_pk" }, "remarks": "Внутренний идентификатор пользователя" }},
+                { "column": { "name": "telegram_chat_id", "type": "text", "constraints": { "nullable": false, "unique": true }, "remarks": "Telegram chat id для доставки сообщений" }},
+                { "column": { "name": "telegram_user_id", "type": "bigint", "remarks": "Telegram user id (если известен)" }},
+                { "column": { "name": "username", "type": "text", "remarks": "Telegram username" }},
+                { "column": { "name": "first_name", "type": "text", "remarks": "Имя пользователя из Telegram" }},
+                { "column": { "name": "language", "type": "text", "defaultValue": "ru", "constraints": { "nullable": false }, "remarks": "Язык пользователя для дайджеста" }},
+                { "column": { "name": "timezone", "type": "text", "defaultValue": "UTC", "constraints": { "nullable": false }, "remarks": "Таймзона пользователя" }},
+                { "column": { "name": "digest_frequency", "type": "text", "defaultValue": "DAILY", "constraints": { "nullable": false }, "remarks": "Частота отправки (DAILY/EVERY_2_DAYS/EVERY_3_DAYS)" }},
+                { "column": { "name": "digest_enabled", "type": "boolean", "defaultValueBoolean": true, "constraints": { "nullable": false }, "remarks": "Флаг активной подписки на дайджест" }},
+                { "column": { "name": "onboarded_at", "type": "timestamp with time zone", "remarks": "Время завершения onboarding" }},
+                { "column": { "name": "last_delivery_at", "type": "timestamp with time zone", "remarks": "Время последней успешной доставки" }},
+                { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата создания профиля" }},
+                { "column": { "name": "updated_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата обновления профиля" }}
+              ]
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "users",
+              "indexName": "users_digest_enabled_idx",
+              "columns": [
+                { "column": { "name": "digest_enabled" }}
+              ]
+            }
+          },
+          {
+            "createTable": {
+              "tableName": "user_topics",
+              "remarks": "Темы, выбранные пользователем при onboarding",
+              "columns": [
+                { "column": { "name": "user_id", "type": "uuid", "constraints": { "nullable": false }, "remarks": "Ссылка на users.id" }},
+                { "column": { "name": "topic_slug", "type": "text", "constraints": { "nullable": false }, "remarks": "Код темы (например world/economy/tech)" }},
+                { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата добавления темы пользователю" }}
+              ]
+            }
+          },
+          {
+            "addPrimaryKey": {
+              "tableName": "user_topics",
+              "columnNames": "user_id, topic_slug",
+              "constraintName": "user_topics_pk"
+            }
+          },
+          {
+            "addForeignKeyConstraint": {
+              "constraintName": "user_topics_user_fk",
+              "baseTableName": "user_topics",
+              "baseColumnNames": "user_id",
+              "referencedTableName": "users",
+              "referencedColumnNames": "id",
+              "onDelete": "CASCADE"
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "user_topics",
+              "indexName": "user_topics_topic_slug_idx",
+              "columns": [
+                { "column": { "name": "topic_slug" }}
+              ]
+            }
+          },
+          {
+            "createTable": {
+              "tableName": "feedback_events",
+              "remarks": "События качества контента: полезно/шум/тревожно и др.",
+              "columns": [
+                { "column": { "name": "id", "type": "uuid", "defaultValueComputed": "gen_random_uuid()", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "feedback_events_pk" }, "remarks": "Идентификатор события фидбэка" }},
+                { "column": { "name": "user_id", "type": "uuid", "remarks": "Пользователь, отправивший фидбэк" }},
+                { "column": { "name": "news_id", "type": "text", "remarks": "Новость, к которой относится фидбэк (если применимо)" }},
+                { "column": { "name": "cluster_id", "type": "uuid", "remarks": "Кластер, к которому относится фидбэк (если применимо)" }},
+                { "column": { "name": "channel", "type": "text", "defaultValue": "telegram", "constraints": { "nullable": false }, "remarks": "Канал получения события" }},
+                { "column": { "name": "event_type", "type": "text", "constraints": { "nullable": false }, "remarks": "Тип события: useful/noise/anxious/click/open/unsubscribe" }},
+                { "column": { "name": "event_value", "type": "text", "remarks": "Дополнительное значение события" }},
+                { "column": { "name": "payload", "type": "jsonb", "remarks": "Сырые атрибуты события" }},
+                { "column": { "name": "occurred_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Время фактического события" }},
+                { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Время записи события в БД" }}
+              ]
+            }
+          },
+          {
+            "addForeignKeyConstraint": {
+              "constraintName": "feedback_events_user_fk",
+              "baseTableName": "feedback_events",
+              "baseColumnNames": "user_id",
+              "referencedTableName": "users",
+              "referencedColumnNames": "id",
+              "onDelete": "SET NULL"
+            }
+          },
+          {
+            "addForeignKeyConstraint": {
+              "constraintName": "feedback_events_news_fk",
+              "baseTableName": "feedback_events",
+              "baseColumnNames": "news_id",
+              "referencedTableName": "news",
+              "referencedColumnNames": "id",
+              "onDelete": "SET NULL"
+            }
+          },
+          {
+            "addForeignKeyConstraint": {
+              "constraintName": "feedback_events_cluster_fk",
+              "baseTableName": "feedback_events",
+              "baseColumnNames": "cluster_id",
+              "referencedTableName": "cluster",
+              "referencedColumnNames": "id",
+              "onDelete": "SET NULL"
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "feedback_events",
+              "indexName": "feedback_events_event_type_idx",
+              "columns": [
+                { "column": { "name": "event_type" }}
+              ]
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "feedback_events",
+              "indexName": "feedback_events_occurred_at_idx",
+              "columns": [
+                { "column": { "name": "occurred_at", "descending": true }}
+              ]
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "feedback_events",
+              "indexName": "feedback_events_user_id_idx",
+              "columns": [
+                { "column": { "name": "user_id" }}
+              ]
+            }
+          },
+          {
+            "createTable": {
+              "tableName": "premium_intent_events",
+              "remarks": "События интереса к Premium-тарифу",
+              "columns": [
+                { "column": { "name": "id", "type": "uuid", "defaultValueComputed": "gen_random_uuid()", "constraints": { "nullable": false, "primaryKey": true, "primaryKeyName": "premium_intent_events_pk" }, "remarks": "Идентификатор premium intent события" }},
+                { "column": { "name": "user_id", "type": "uuid", "remarks": "Пользователь, проявивший интерес к Premium" }},
+                { "column": { "name": "price_rub", "type": "integer", "constraints": { "nullable": false }, "remarks": "Выбранная цена (199/299/399)" }},
+                { "column": { "name": "segment", "type": "text", "remarks": "Сегмент пользователя/аудитории" }},
+                { "column": { "name": "channel", "type": "text", "defaultValue": "telegram", "constraints": { "nullable": false }, "remarks": "Канал события" }},
+                { "column": { "name": "source", "type": "text", "remarks": "Источник события (poll/button/campaign)" }},
+                { "column": { "name": "payload", "type": "jsonb", "remarks": "Дополнительный контекст события" }},
+                { "column": { "name": "occurred_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Время фактического события" }},
+                { "column": { "name": "created_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Время записи события в БД" }}
+              ]
+            }
+          },
+          {
+            "addForeignKeyConstraint": {
+              "constraintName": "premium_intent_events_user_fk",
+              "baseTableName": "premium_intent_events",
+              "baseColumnNames": "user_id",
+              "referencedTableName": "users",
+              "referencedColumnNames": "id",
+              "onDelete": "SET NULL"
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "premium_intent_events",
+              "indexName": "premium_intent_events_price_rub_idx",
+              "columns": [
+                { "column": { "name": "price_rub" }}
+              ]
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "premium_intent_events",
+              "indexName": "premium_intent_events_occurred_at_idx",
+              "columns": [
+                { "column": { "name": "occurred_at", "descending": true }}
+              ]
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "premium_intent_events",
+              "indexName": "premium_intent_events_user_id_idx",
+              "columns": [
+                { "column": { "name": "user_id" }}
+              ]
+            }
+          },
+          {
+            "sql": {
+              "comment": "Basic domain checks for profile and product events",
+              "sql": "ALTER TABLE users ADD CONSTRAINT users_digest_frequency_chk CHECK (digest_frequency IN ('DAILY', 'EVERY_2_DAYS', 'EVERY_3_DAYS')); ALTER TABLE feedback_events ADD CONSTRAINT feedback_events_event_type_chk CHECK (event_type IN ('useful', 'noise', 'anxious', 'click', 'open', 'unsubscribe')); ALTER TABLE premium_intent_events ADD CONSTRAINT premium_intent_events_price_chk CHECK (price_rub IN (199, 299, 399));"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

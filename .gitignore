@@ -3,6 +3,8 @@
 
 # Logs
 *.log
+logs/
+app/logs/
 
 # BlueJ
 *.ctxt
@@ -57,3 +59,11 @@ build/
 
 # VS Code
 .vscode/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Local environment files
+.env
+.env.local

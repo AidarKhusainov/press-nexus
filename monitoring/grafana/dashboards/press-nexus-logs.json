@@ -1,0 +1,121 @@
+{
+  "id": null,
+  "uid": "press-nexus-logs",
+  "title": "Press Nexus Logs",
+  "tags": ["press-nexus", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "channel",
+        "type": "query",
+        "label": "Channel",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": {
+          "query": "label_values({job=\"press-nexus\"}, channel)",
+          "refId": "LokiVariableQueryEditor-Channel"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "level",
+        "type": "custom",
+        "label": "Level",
+        "query": ".*,INFO,WARN,ERROR,DEBUG",
+        "current": {
+          "selected": true,
+          "text": "ALL",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "search",
+        "type": "textbox",
+        "label": "Text",
+        "query": "",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "Logs",
+      "gridPos": { "h": 20, "w": 24, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "options": {
+        "showLabels": true,
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"press-nexus\", channel=~\"$channel\", level=~\"${level:regex}\"} |= \"$search\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Log Volume by Level (5m)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (level) (count_over_time({job=\"press-nexus\", channel=~\"$channel\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Error/Warn Rate by Channel (5m)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (channel, level) (count_over_time({job=\"press-nexus\", channel=~\"$channel\", level=~\"WARN|ERROR\"}[5m]))"
+        }
+      ]
+    }
+  ]
+}

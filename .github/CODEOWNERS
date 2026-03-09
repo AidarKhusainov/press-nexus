@@ -1,0 +1,8 @@
+# Replace owners with actual GitHub usernames/teams if needed.
+
+* @aidar
+
+/docs/ @aidar
+/.github/ @aidar
+/app/src/main/java/ @aidar
+/app/src/test/java/ @aidar

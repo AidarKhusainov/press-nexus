@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://press-nexus.local/contracts/events/telegram-webhook-update-v1.schema.json",
+  "title": "TelegramWebhookUpdateV1",
+  "type": "object",
+  "required": ["version", "updateId", "payload"],
+  "properties": {
+    "version": { "type": "string", "const": "v1" },
+    "updateId": { "type": ["integer", "string"] },
+    "payload": { "type": "object", "additionalProperties": true },
+    "receivedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
