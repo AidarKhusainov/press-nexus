@@ -50,6 +50,7 @@ The workflow uploads:
 into `/opt/press-nexus` and then runs the remote deploy script there.
 
 The GHCR credentials are not stored in `.env`; they are passed only to the deploy session.
+SSH credentials on the runner are installed through `shimataro/ssh-key-action@v2`.
 
 ## What The Deploy Does
 

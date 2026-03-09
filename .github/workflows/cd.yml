@@ -108,16 +108,12 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.ref }}
 
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.1
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
         with:
-          ssh-private-key: ${{ secrets.PROD_SSH_KEY }}
-          log-public-key: false
-
-      - name: Trust production host
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.PROD_SSH_HOSTKEY }}" > ~/.ssh/known_hosts
+          key: ${{ secrets.PROD_SSH_KEY }}
+          known_hosts: ${{ secrets.PROD_SSH_HOSTKEY }}
+          if_key_exists: replace
 
       - name: Create deploy bundle
         env:
