@@ -42,4 +42,31 @@ class AppMetricsTest {
 		assertEquals(67.0, meterRegistry.get("press.product.report.d1.cohort.size").gauge().value(), 0.0001);
 		assertEquals(35.0, meterRegistry.get("press.product.report.d7.cohort.size").gauge().value(), 0.0001);
 	}
+
+	@Test
+	void briefToneModerationEventIncrementsTaggedCounters() {
+		final var meterRegistry = new SimpleMeterRegistry();
+		final var appMetrics = new AppMetrics(meterRegistry);
+
+		appMetrics.briefToneModerationEvent("accepted", "must_know");
+		appMetrics.briefToneModerationEvent("rejected", "good_to_know");
+		appMetrics.briefToneModerationEvent("accepted", "must_know");
+
+		assertEquals(
+			2.0,
+			meterRegistry.get("press.brief.tone.moderation")
+				.tags("outcome", "accepted", "importance", "must_know")
+				.counter()
+				.count(),
+			0.0001
+		);
+		assertEquals(
+			1.0,
+			meterRegistry.get("press.brief.tone.moderation")
+				.tags("outcome", "rejected", "importance", "good_to_know")
+				.counter()
+				.count(),
+			0.0001
+		);
+	}
 }

@@ -16,7 +16,7 @@ Last updated: 2026-03-09
 | Epic | Status | Progress |
 |---|---|---|
 | A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization/dedup are implemented, but duplicate reduction criterion is not confirmed by report |
-| B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, and 3-block format exist; emotional filtering is partial |
+| B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; usefulness KPI validation is pending beta data |
 | C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented, KPI validation is pending |
 | D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
 | E. Premium Test | TODO | Deferred until beta stabilization: product is temporarily fully free |
@@ -32,7 +32,7 @@ Last updated: 2026-03-09
 | B | Event clustering | DONE | `service/news/NewsClusteringService.java`, `cluster*` tables |
 | B | must/good ranking | DONE | `service/brief/DailyBriefService.java` (`scoreImportance`) |
 | B | 3-block summary | DONE | `service/brief/DailyBriefService.java`, `service/brief/DailyBriefFormatter.java` |
-| B | Emotional filter | IN_PROGRESS | Neutral format exists, but no dedicated quality gate/tone moderator |
+| B | Emotional filter | DONE | Dedicated tone moderation quality gate in `service/brief/BriefToneModerationService.java`, integrated into `service/brief/DailyBriefService.java`; moderation metric `press.brief.tone.moderation` in `observability/AppMetrics.java` |
 | B | Criterion: 70% "useful" | CHECK | Feedback collection loop + report required |
 | C | Telegram bot: start, topics, frequency | DONE | Webhook `/api/telegram/webhook`, commands `/start`, `/topics`, `/frequency`, `/profile` and inline onboarding buttons for topics/frequency in `service/profile/TelegramOnboardingBotService.java` |
 | C | User preference storage | DONE | Personalized build and delivery by `topics`/`digest_frequency`/`last_delivery_at`: `service/profile/UserProfileService.java`, `service/brief/DailyBriefService.java`, `service/delivery/DailyBriefDeliveryService.java` |
@@ -55,7 +55,7 @@ Last updated: 2026-03-09
 | 3 | Dedup + basic clustering | IN_PROGRESS |
 | 4 | Importance scoring | DONE |
 | 5 | Card format + digest template | DONE |
-| 6 | Emotional filter | IN_PROGRESS |
+| 6 | Emotional filter | DONE |
 | 7 | Telegram onboarding + topics | DONE |
 | 8 | Telegram delivery job | DONE |
 | 9 | Feedback events | DONE |

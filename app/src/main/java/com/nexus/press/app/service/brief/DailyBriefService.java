@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.brief.model.BriefImportance;
 import com.nexus.press.app.service.brief.model.DailyBrief;
 import com.nexus.press.app.service.brief.model.DailyBriefItem;
@@ -72,6 +73,8 @@ public class DailyBriefService {
 	);
 
 	private final DatabaseClient db;
+	private final BriefToneModerationService briefToneModerationService;
+	private final AppMetrics appMetrics;
 
 	public Mono<DailyBrief> buildBrief(final Duration lookback, final int maxItems, final String language) {
 		return buildBrief(lookback, maxItems, language, List.of());
@@ -144,17 +147,31 @@ public class DailyBriefService {
 			final var parts = splitSummary(title, candidate.summary(), language);
 			if (!matchesAnyTopic(candidate, parts, topics)) continue;
 			final var importance = scoreImportance(candidate, parts, language);
+			final var moderated = briefToneModerationService.moderate(
+				title,
+				parts.whatHappened(),
+				parts.whyImportant(),
+				parts.whatNext(),
+				language,
+				importance
+			);
+			final String importanceTag = importance == BriefImportance.MUST_KNOW ? "must_know" : "good_to_know";
+			if (moderated.rejected()) {
+				appMetrics.briefToneModerationEvent("rejected", importanceTag);
+				continue;
+			}
+			appMetrics.briefToneModerationEvent("accepted", importanceTag);
 
 			selected.add(new DailyBriefItem(
 				candidate.id(),
-				title,
+				moderated.moderatedTitle(),
 				url,
 				clean(candidate.media()),
 				candidate.eventAt(),
 				importance,
-				parts.whatHappened(),
-				parts.whyImportant(),
-				parts.whatNext()
+				moderated.moderatedWhatHappened(),
+				moderated.moderatedWhyImportant(),
+				moderated.moderatedWhatNext()
 			));
 		}
 		return selected;

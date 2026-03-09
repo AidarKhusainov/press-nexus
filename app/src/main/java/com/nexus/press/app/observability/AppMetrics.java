@@ -227,6 +227,14 @@ public class AppMetrics {
 			.record(completionSeconds);
 	}
 
+	public void briefToneModerationEvent(final String outcome, final String importance) {
+		Counter.builder("press.brief.tone.moderation")
+			.description("Daily brief tone moderation outcomes")
+			.tags("outcome", safeTag(outcome, "unknown"), "importance", safeTag(importance, "unknown"))
+			.register(meterRegistry)
+			.increment();
+	}
+
 	public void productReportSnapshot(
 		final double d1RetentionPct,
 		final double d7RetentionPct,
@@ -307,6 +315,13 @@ public class AppMetrics {
 		}
 		final var simpleName = throwable.getClass().getSimpleName();
 		return simpleName == null || simpleName.isBlank() ? throwable.getClass().getName() : simpleName;
+	}
+
+	private String safeTag(final String value, final String fallback) {
+		if (value == null || value.isBlank()) {
+			return fallback;
+		}
+		return value;
 	}
 
 	private static final class ProductReportSnapshotGaugeValues {
