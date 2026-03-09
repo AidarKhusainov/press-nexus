@@ -23,7 +23,7 @@ concurrency:
 
 env:
   PROD_HOST: ${{ secrets.PROD_HOST }}
-  PROD_PORT: 22
+  PROD_PORT: ${{ secrets.PROD_PORT }}
   PROD_APP_DIR: /opt/press-nexus
 
 jobs:
