@@ -16,7 +16,7 @@ Last updated: 2026-03-09
 | Epic | Status | Progress |
 |---|---|---|
 | A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization are implemented; near-duplicate suppression now combines URL/content-hash, representative-only summarization, and brief-time similarity/text fallback, but duplicate reduction criterion is not confirmed by report |
-| B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; usefulness KPI validation is pending beta data |
+| B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; `DailyBriefService` now re-ranks candidates with source diversity and a more stable must/good balance, usefulness KPI validation is pending beta data |
 | C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented, KPI validation is pending |
 | D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
 | E. Premium Test | DONE | Paid premium is postponed for beta: `/premium` now explicitly says that all current functionality is available for free; old premium callbacks are informational only |
@@ -61,7 +61,7 @@ Last updated: 2026-03-09
 | 9 | Feedback events | DONE |
 | 10 | Analytics + daily quality-report | DONE |
 | 11 | Closed beta for 20 users | TODO |
-| 12 | Noise/ranking adjustments | TODO |
+| 12 | Noise/ranking adjustments | DONE |
 | 13 | Expand to 50–100 users | TODO |
 | 14 | Premium intent test + go/no-go | DONE |
 
@@ -88,9 +88,9 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 
 ## Next Development Tasks
 
-1. Tune digest noise/ranking quality: improve `selectItems` and `scoreImportance`, add better source diversity, and a more stable must/good balance in the brief.
+1. DONE (2026-03-09): tuned digest noise/ranking quality in `selectItems` and `scoreImportance`, added better source diversity and a more stable must/good balance in the brief.
    Main code area: `service/brief/DailyBriefService.java`.
-2. Add a fixture-based regression suite for digest quality: cover dedup, ranking, tone moderation, and 3-block summary formatting so quality changes are reproducible before beta traffic is large enough.
+2. Add a fixture-based regression suite for digest quality: expand current `DailyBriefServiceTest` coverage to full digest fixtures for dedup, ranking, tone moderation, and 3-block summary formatting so quality changes are reproducible before beta traffic is large enough.
    Main code areas: `service/brief/DailyBriefService.java`, `service/brief/BriefToneModerationService.java`, `app/src/test/java/**`.
 
 ## How to Update Progress

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.Comparator;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import com.nexus.press.app.observability.AppMetrics;
@@ -77,6 +78,12 @@ public class DailyBriefService {
 	);
 	private static final List<String> MUST_KEYWORDS_EN = List.of(
 		"breaking", "war", "attack", "sanction", "election", "earthquake", "fire", "inflation", "interest rate", "killed", "tariff"
+	);
+	private static final List<String> HIGH_IMPACT_KEYWORDS_RU = List.of(
+		"цб", "банк россии", "минфин", "правительств", "бюджет", "налог", "тариф", "нефт", "газ", "регулятор"
+	);
+	private static final List<String> HIGH_IMPACT_KEYWORDS_EN = List.of(
+		"central bank", "fed", "treasury", "government", "budget", "tax", "tariff", "oil", "gas", "regulator"
 	);
 
 	private final DatabaseClient db;
@@ -149,14 +156,12 @@ public class DailyBriefService {
 		final Set<String> topics,
 		final Map<String, Set<String>> nearDuplicateIds
 	) {
-		final List<DailyBriefItem> selected = new ArrayList<>();
 		final Set<String> seenTitles = new HashSet<>();
 		final Set<String> seenUrls = new HashSet<>();
-		final Set<String> selectedIds = new HashSet<>();
-		final List<CandidateFingerprint> selectedFingerprints = new ArrayList<>();
+		final OffsetDateTime referenceTime = referenceTime(candidates);
+		final List<CandidateAssessment> rankedCandidates = new ArrayList<>();
 
 		for (final var candidate : candidates) {
-			if (selected.size() >= maxItems) break;
 			final String title = clean(candidate.title());
 			final String url = clean(candidate.url());
 			if (title.isBlank() || url.isBlank()) continue;
@@ -167,40 +172,246 @@ public class DailyBriefService {
 
 			final var parts = splitSummary(title, candidate.summary(), language);
 			if (!matchesAnyTopic(candidate, parts, topics)) continue;
-			if (isNearDuplicate(candidate, title, parts, selectedIds, nearDuplicateIds, selectedFingerprints)) continue;
-			final var importance = scoreImportance(candidate, parts, language);
-			final var moderated = briefToneModerationService.moderate(
-				title,
-				parts.whatHappened(),
-				parts.whyImportant(),
-				parts.whatNext(),
-				language,
-				importance
-			);
-			final String importanceTag = importance == BriefImportance.MUST_KNOW ? "must_know" : "good_to_know";
-			if (moderated.rejected()) {
-				appMetrics.briefToneModerationEvent("rejected", importanceTag);
-				continue;
-			}
-			appMetrics.briefToneModerationEvent("accepted", importanceTag);
 
-			selected.add(new DailyBriefItem(
-				candidate.id(),
-				moderated.moderatedTitle(),
+			final int importanceScore = importanceScore(candidate, parts, language, referenceTime);
+			rankedCandidates.add(new CandidateAssessment(
+				candidate,
+				title,
 				url,
 				clean(candidate.media()),
-				candidate.eventAt(),
-				importance,
-				moderated.moderatedWhatHappened(),
-				moderated.moderatedWhyImportant(),
-				moderated.moderatedWhatNext()
+				parts,
+				importanceScore,
+				scoreImportance(importanceScore)
 			));
-			if (candidate.id() != null && !candidate.id().isBlank()) {
-				selectedIds.add(candidate.id());
-			}
-			selectedFingerprints.add(candidateFingerprint(title, parts));
 		}
+
+		rankedCandidates.sort(Comparator
+			.comparingInt(CandidateAssessment::importanceScore).reversed()
+			.thenComparing(CandidateAssessment::eventAt, Comparator.nullsLast(Comparator.reverseOrder()))
+			.thenComparing(CandidateAssessment::title));
+
+		final int targetMustKnow = targetMustKnowCount(rankedCandidates, maxItems);
+		final List<DailyBriefItem> selected = new ArrayList<>();
+		final Set<String> selectedIds = new HashSet<>();
+		final Set<String> selectedUrls = new HashSet<>();
+		final List<CandidateFingerprint> selectedFingerprints = new ArrayList<>();
+		final Map<String, Integer> mediaUsage = new HashMap<>();
+
+		selectRankedItems(
+			rankedCandidates,
+			BriefImportance.MUST_KNOW,
+			targetMustKnow,
+			true,
+			language,
+			nearDuplicateIds,
+			selected,
+			selectedIds,
+			selectedUrls,
+			selectedFingerprints,
+			mediaUsage
+		);
+		selectRankedItems(
+			rankedCandidates,
+			BriefImportance.MUST_KNOW,
+			targetMustKnow - countByImportance(selected, BriefImportance.MUST_KNOW),
+			false,
+			language,
+			nearDuplicateIds,
+			selected,
+			selectedIds,
+			selectedUrls,
+			selectedFingerprints,
+			mediaUsage
+		);
+		selectRankedItems(
+			rankedCandidates,
+			BriefImportance.GOOD_TO_KNOW,
+			maxItems - selected.size(),
+			true,
+			language,
+			nearDuplicateIds,
+			selected,
+			selectedIds,
+			selectedUrls,
+			selectedFingerprints,
+			mediaUsage
+		);
+		selectRankedItems(
+			rankedCandidates,
+			BriefImportance.GOOD_TO_KNOW,
+			maxItems - selected.size(),
+			false,
+			language,
+			nearDuplicateIds,
+			selected,
+			selectedIds,
+			selectedUrls,
+			selectedFingerprints,
+			mediaUsage
+		);
+		selectRemainingItems(
+			rankedCandidates,
+			maxItems,
+			true,
+			language,
+			nearDuplicateIds,
+			selected,
+			selectedIds,
+			selectedUrls,
+			selectedFingerprints,
+			mediaUsage
+		);
+		selectRemainingItems(
+			rankedCandidates,
+			maxItems,
+			false,
+			language,
+			nearDuplicateIds,
+			selected,
+			selectedIds,
+			selectedUrls,
+			selectedFingerprints,
+			mediaUsage
+		);
 		return selected;
+	}
+
+	private void selectRankedItems(
+		final List<CandidateAssessment> rankedCandidates,
+		final BriefImportance importance,
+		final int limit,
+		final boolean preferFreshMedia,
+		final String language,
+		final Map<String, Set<String>> nearDuplicateIds,
+		final List<DailyBriefItem> selected,
+		final Set<String> selectedIds,
+		final Set<String> selectedUrls,
+		final List<CandidateFingerprint> selectedFingerprints,
+		final Map<String, Integer> mediaUsage
+	) {
+		if (limit <= 0) {
+			return;
+		}
+		int added = 0;
+		for (final CandidateAssessment candidate : rankedCandidates) {
+			if (added >= limit) {
+				break;
+			}
+			if (candidate.importance() != importance || selectedUrls.contains(candidate.url())) {
+				continue;
+			}
+			if (preferFreshMedia && hasMedia(candidate.media()) && mediaUsage.containsKey(candidate.media())) {
+				continue;
+			}
+			if (tryAddCandidate(
+				candidate,
+				language,
+				nearDuplicateIds,
+				selected,
+				selectedIds,
+				selectedUrls,
+				selectedFingerprints,
+				mediaUsage
+			)) {
+				added++;
+			}
+		}
+	}
+
+	private void selectRemainingItems(
+		final List<CandidateAssessment> rankedCandidates,
+		final int maxItems,
+		final boolean preferFreshMedia,
+		final String language,
+		final Map<String, Set<String>> nearDuplicateIds,
+		final List<DailyBriefItem> selected,
+		final Set<String> selectedIds,
+		final Set<String> selectedUrls,
+		final List<CandidateFingerprint> selectedFingerprints,
+		final Map<String, Integer> mediaUsage
+	) {
+		if (selected.size() >= maxItems) {
+			return;
+		}
+		for (final CandidateAssessment candidate : rankedCandidates) {
+			if (selected.size() >= maxItems) {
+				break;
+			}
+			if (selectedUrls.contains(candidate.url())) {
+				continue;
+			}
+			if (preferFreshMedia && hasMedia(candidate.media()) && mediaUsage.containsKey(candidate.media())) {
+				continue;
+			}
+			tryAddCandidate(
+				candidate,
+				language,
+				nearDuplicateIds,
+				selected,
+				selectedIds,
+				selectedUrls,
+				selectedFingerprints,
+				mediaUsage
+			);
+		}
+	}
+
+	private boolean tryAddCandidate(
+		final CandidateAssessment assessment,
+		final String language,
+		final Map<String, Set<String>> nearDuplicateIds,
+		final List<DailyBriefItem> selected,
+		final Set<String> selectedIds,
+		final Set<String> selectedUrls,
+		final List<CandidateFingerprint> selectedFingerprints,
+		final Map<String, Integer> mediaUsage
+	) {
+		if (isNearDuplicate(
+			assessment.candidate(),
+			assessment.title(),
+			assessment.parts(),
+			selectedIds,
+			nearDuplicateIds,
+			selectedFingerprints
+		)) {
+			return false;
+		}
+
+		final var moderated = briefToneModerationService.moderate(
+			assessment.title(),
+			assessment.parts().whatHappened(),
+			assessment.parts().whyImportant(),
+			assessment.parts().whatNext(),
+			language,
+			assessment.importance()
+		);
+		final String importanceTag = assessment.importance() == BriefImportance.MUST_KNOW ? "must_know" : "good_to_know";
+		if (moderated.rejected()) {
+			appMetrics.briefToneModerationEvent("rejected", importanceTag);
+			return false;
+		}
+		appMetrics.briefToneModerationEvent("accepted", importanceTag);
+
+		selected.add(new DailyBriefItem(
+			assessment.candidate().id(),
+			moderated.moderatedTitle(),
+			assessment.url(),
+			assessment.media(),
+			assessment.candidate().eventAt(),
+			assessment.importance(),
+			moderated.moderatedWhatHappened(),
+			moderated.moderatedWhyImportant(),
+			moderated.moderatedWhatNext()
+		));
+		selectedUrls.add(assessment.url());
+		if (assessment.candidate().id() != null && !assessment.candidate().id().isBlank()) {
+			selectedIds.add(assessment.candidate().id());
+		}
+		selectedFingerprints.add(candidateFingerprint(assessment.title(), assessment.parts()));
+		if (hasMedia(assessment.media())) {
+			mediaUsage.merge(assessment.media(), 1, Integer::sum);
+		}
+		return true;
 	}
 
 	private Mono<Map<String, Set<String>>> findNearDuplicateIds(final List<Candidate> candidates) {
@@ -303,22 +514,90 @@ public class DailyBriefService {
 		return normalized;
 	}
 
-	private BriefImportance scoreImportance(final Candidate candidate, final SummaryParts parts, final String language) {
+	private int targetMustKnowCount(final List<CandidateAssessment> rankedCandidates, final int maxItems) {
+		final int mustAvailable = (int) rankedCandidates.stream()
+			.filter(candidate -> candidate.importance() == BriefImportance.MUST_KNOW)
+			.count();
+		final int goodAvailable = rankedCandidates.size() - mustAvailable;
+		if (mustAvailable == 0 || maxItems <= 0) {
+			return 0;
+		}
+		if (goodAvailable == 0) {
+			return Math.min(maxItems, mustAvailable);
+		}
+		final int preferred = Math.max(1, (int) Math.ceil(maxItems / 3d));
+		return Math.min(Math.min(preferred, mustAvailable), Math.max(1, maxItems - 1));
+	}
+
+	private int countByImportance(final List<DailyBriefItem> items, final BriefImportance importance) {
+		int count = 0;
+		for (final DailyBriefItem item : items) {
+			if (item.importance() == importance) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private int importanceScore(
+		final Candidate candidate,
+		final SummaryParts parts,
+		final String language,
+		final OffsetDateTime referenceTime
+	) {
 		int score = 0;
-		final String haystack = (candidate.title() + " " + candidate.summary()).toLowerCase(Locale.ROOT);
+		final String haystack = (clean(candidate.title()) + " " + clean(candidate.summary()) + " " + clean(parts.whyImportant()))
+			.toLowerCase(Locale.ROOT);
 		final var keywords = "ru".equals(language) ? MUST_KEYWORDS_RU : MUST_KEYWORDS_EN;
+		final var highImpactKeywords = "ru".equals(language) ? HIGH_IMPACT_KEYWORDS_RU : HIGH_IMPACT_KEYWORDS_EN;
 
 		for (final var keyword : keywords) {
+			if (haystack.contains(keyword)) {
+				score += 3;
+				break;
+			}
+		}
+		for (final var keyword : highImpactKeywords) {
 			if (haystack.contains(keyword)) {
 				score += 2;
 				break;
 			}
 		}
 		if (candidate.media() != null && MAJOR_MEDIA.contains(candidate.media().toUpperCase(Locale.ROOT))) score += 1;
-		if (candidate.eventAt() != null && candidate.eventAt().isAfter(OffsetDateTime.now().minusHours(6))) score += 1;
+		if (candidate.eventAt() != null && referenceTime != null) {
+			if (candidate.eventAt().isAfter(referenceTime.minusHours(4))) score += 2;
+			else if (candidate.eventAt().isAfter(referenceTime.minusHours(12))) score += 1;
+		}
+		if (hasConcreteContext(parts, language)) score += 1;
 		if ((parts.whyImportant().length() + parts.whatNext().length()) > 180) score += 1;
 
-		return score >= 3 ? BriefImportance.MUST_KNOW : BriefImportance.GOOD_TO_KNOW;
+		return score;
+	}
+
+	private BriefImportance scoreImportance(final int score) {
+		return score >= 4 ? BriefImportance.MUST_KNOW : BriefImportance.GOOD_TO_KNOW;
+	}
+
+	private boolean hasConcreteContext(final SummaryParts parts, final String language) {
+		return !clean(parts.whyImportant()).equals(clean(defaultWhy(language)))
+			|| !clean(parts.whatNext()).equals(clean(defaultNext(language)));
+	}
+
+	private OffsetDateTime referenceTime(final List<Candidate> candidates) {
+		OffsetDateTime reference = null;
+		for (final Candidate candidate : candidates) {
+			if (candidate.eventAt() == null) {
+				continue;
+			}
+			if (reference == null || candidate.eventAt().isAfter(reference)) {
+				reference = candidate.eventAt();
+			}
+		}
+		return reference == null ? OffsetDateTime.now() : reference;
+	}
+
+	private boolean hasMedia(final String media) {
+		return media != null && !media.isBlank();
 	}
 
 	private SummaryParts splitSummary(final String title, final String summary, final String language) {
@@ -456,6 +735,20 @@ public class DailyBriefService {
 		String signature,
 		Set<String> tokens
 	) {}
+
+	private record CandidateAssessment(
+		Candidate candidate,
+		String title,
+		String url,
+		String media,
+		SummaryParts parts,
+		int importanceScore,
+		BriefImportance importance
+	) {
+		private OffsetDateTime eventAt() {
+			return candidate.eventAt();
+		}
+	}
 
 	private record SummaryParts(
 		String whatHappened,
