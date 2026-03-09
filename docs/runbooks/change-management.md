@@ -10,6 +10,7 @@
 
 - Verify dependency availability (DB/Ollama/queues).
 - Verify config and env compatibility.
+- Verify `PRESS_API_KEY` and `TELEGRAM_WEBHOOK_SECRET_TOKEN` are set for the target environment.
 - Verify alerts and dashboards.
 
 ## After Deploy

@@ -61,6 +61,8 @@ paths:
       operationId: sendDailyBriefNow
       tags: [Brief]
       summary: Trigger immediate digest delivery
+      security:
+        - InternalApiKey: []
       responses:
         '200':
           description: Delivery result
@@ -68,11 +70,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DailyBriefSendResponse'
+        '401':
+          description: Missing or invalid internal API key
   /api/feedback:
     post:
       operationId: postFeedbackEvent
       tags: [Feedback]
       summary: Ingest feedback event
+      security:
+        - InternalApiKey: []
       requestBody:
         required: false
         content:
@@ -86,11 +92,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiStatusResponse'
+        '401':
+          description: Missing or invalid internal API key
   /api/analytics/product-report/daily:
     get:
       operationId: getDailyProductReport
       tags: [ProductReport]
       summary: Build daily product report in JSON
+      security:
+        - InternalApiKey: []
       parameters:
         - in: query
           name: date
@@ -104,11 +114,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProductDailyReport'
+        '401':
+          description: Missing or invalid internal API key
   /api/analytics/product-report/daily/text:
     get:
       operationId: getDailyProductReportText
       tags: [ProductReport]
       summary: Build daily product report in plain text
+      security:
+        - InternalApiKey: []
       parameters:
         - in: query
           name: date
@@ -122,11 +136,15 @@ paths:
             text/plain:
               schema:
                 type: string
+        '401':
+          description: Missing or invalid internal API key
   /api/news/{id}/similar:
     get:
       operationId: getSimilarNews
       tags: [Similarity]
       summary: Return top similar news items
+      security:
+        - InternalApiKey: []
       parameters:
         - in: path
           name: id
@@ -147,11 +165,15 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SimilarItem'
+        '401':
+          description: Missing or invalid internal API key
   /api/clusters:
     get:
       operationId: getClusters
       tags: [Similarity]
       summary: Return clusters by similarity threshold
+      security:
+        - InternalApiKey: []
       parameters:
         - in: query
           name: threshold
@@ -165,11 +187,15 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Cluster'
+        '401':
+          description: Missing or invalid internal API key
   /api/news/{id}/cluster:
     get:
       operationId: getClusterByNewsId
       tags: [Similarity]
       summary: Return cluster for a specific news item
+      security:
+        - InternalApiKey: []
       parameters:
         - in: path
           name: id
@@ -185,11 +211,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cluster'
+        '401':
+          description: Missing or invalid internal API key
   /api/telegram/webhook:
     post:
       operationId: postTelegramWebhook
       tags: [TelegramWebhook]
       summary: Process Telegram webhook update
+      security:
+        - TelegramWebhookSecret: []
       requestBody:
         required: false
         content:
@@ -203,7 +233,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiStatusResponse'
+        '401':
+          description: Missing or invalid Telegram webhook secret
 components:
+  securitySchemes:
+    InternalApiKey:
+      type: apiKey
+      in: header
+      name: X-PressNexus-Api-Key
+      description: Required for internal operational and analytics endpoints when internal API auth is enabled.
+    TelegramWebhookSecret:
+      type: apiKey
+      in: header
+      name: X-Telegram-Bot-Api-Secret-Token
+      description: Required for Telegram webhook requests when webhook secret validation is enabled.
   schemas:
     DailyBriefSendResponse:
       type: object

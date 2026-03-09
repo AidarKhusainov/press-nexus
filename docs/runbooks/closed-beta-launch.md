@@ -9,6 +9,7 @@ Launch and monitor the first closed beta wave for 20 Telegram users with reprodu
 - App is running and healthy on `http://localhost:8080`.
 - Telegram delivery is enabled and `press.delivery.telegram.bot-token` is configured.
 - PostgreSQL is available and migrations are applied.
+- Internal API auth is configured if `press.security.internal-api.enabled=true`.
 - Prometheus/Grafana are optional but recommended for daily follow-up.
 
 ## 1. Verify app readiness
@@ -35,6 +36,7 @@ Use the helper script:
 ```bash
 ./scripts/closed-beta-check.sh \
   --api-base-url http://localhost:8080 \
+  --api-key "$PRESS_API_KEY" \
   --report-date YYYY-MM-DD \
   --trigger-send-now \
   --preview-out /tmp/press-beta-preview.txt \
@@ -68,11 +70,13 @@ Or from Prometheus snapshot:
 ```bash
 ./scripts/update-mvp-progress-go-no-go.sh \
   --date YYYY-MM-DD \
+  --api-key "$PRESS_API_KEY" \
   --prometheus-base-url http://localhost:9090
 ```
 
 ## Rollback / mitigation
 
 - Stop scheduled delivery by setting `press.delivery.telegram.enabled=false`.
+- Rotate `PRESS_API_KEY` or `TELEGRAM_WEBHOOK_SECRET_TOKEN` if ingress credentials are suspected to be exposed.
 - Use `/api/brief/daily/send` only after preview looks acceptable.
 - If quality degrades, keep beta audience fixed and adjust ranking/noise heuristics before expanding beyond 20 users.

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import com.nexus.press.app.config.property.SimilarityProperties;
+import com.nexus.press.app.config.RequestAuthenticationConfiguration;
 import com.nexus.press.app.service.analytics.ProductDailyReport;
 import com.nexus.press.app.service.analytics.ProductReportService;
 import com.nexus.press.app.service.brief.DailyBriefFormatter;
@@ -60,7 +61,8 @@ import static org.mockito.BDDMockito.given;
 	FeedbackController.class,
 	ProductReportController.class,
 	SimilarityController.class,
-	TelegramWebhookController.class
+	TelegramWebhookController.class,
+	RequestAuthenticationConfiguration.class
 })
 class ApiContractTest {
 

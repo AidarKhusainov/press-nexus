@@ -26,7 +26,8 @@
 
 | Threat | Vector | Control |
 |---|---|---|
-| Spoofed webhook/event payload | Public endpoint abuse | Input validation, contract checks, error-safe handling |
+| Spoofed webhook/event payload | Public endpoint abuse | Input validation, contract checks, Telegram secret header validation, error-safe handling |
+| Unauthorized operational API access | Public access to internal endpoints | Internal API key on operational/reporting endpoints, reverse-proxy restrictions |
 | Sensitive data leakage in logs | Logging raw payloads | Structured logging, redact sensitive fields |
 | Dependency supply-chain risk | Vulnerable transitive deps | Dependabot + dependency review in CI |
 | DoS via external latency | Slow/unavailable upstreams | Timeouts, retries, bounded queues, fallback |
@@ -37,4 +38,3 @@
 
 - Review quarterly.
 - Mandatory review on architecture changes.
-

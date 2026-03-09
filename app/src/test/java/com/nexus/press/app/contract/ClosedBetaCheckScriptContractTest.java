@@ -7,6 +7,7 @@ import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,6 +33,7 @@ class ClosedBetaCheckScriptContractTest {
 		assumeTrue(commandAvailable("jq"), "jq is required for the script contract test");
 
 		final AtomicBoolean sendTriggered = new AtomicBoolean(false);
+		final AtomicInteger internalApiCallsWithKey = new AtomicInteger(0);
 		final HttpServer server;
 		try {
 			server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -54,6 +56,9 @@ class ClosedBetaCheckScriptContractTest {
 			exchange.close();
 		});
 		server.createContext("/api/brief/daily/send", exchange -> {
+			if ("test-internal-key".equals(exchange.getRequestHeaders().getFirst("X-PressNexus-Api-Key"))) {
+				internalApiCallsWithKey.incrementAndGet();
+			}
 			sendTriggered.set(true);
 			final byte[] body = "{\"sentChats\":2}".getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -62,6 +67,9 @@ class ClosedBetaCheckScriptContractTest {
 			exchange.close();
 		});
 		server.createContext("/api/analytics/product-report/daily", exchange -> {
+			if ("test-internal-key".equals(exchange.getRequestHeaders().getFirst("X-PressNexus-Api-Key"))) {
+				internalApiCallsWithKey.incrementAndGet();
+			}
 			final byte[] body = """
 				{
 				  "reportDate": "2026-03-09",
@@ -88,6 +96,8 @@ class ClosedBetaCheckScriptContractTest {
 				projectRoot().resolve("scripts/closed-beta-check.sh").toString(),
 				"--api-base-url",
 				"http://127.0.0.1:" + server.getAddress().getPort(),
+				"--api-key",
+				"test-internal-key",
 				"--report-date",
 				"2026-03-09",
 				"--trigger-send-now",
@@ -111,6 +121,7 @@ class ClosedBetaCheckScriptContractTest {
 		}
 
 		assertTrue(sendTriggered.get(), "Script must trigger POST /api/brief/daily/send when requested");
+		assertEquals(2, internalApiCallsWithKey.get(), "Script must send API key header to protected endpoints");
 		assertTrue(Files.readString(previewOut).contains("Preview card"));
 		assertTrue(Files.readString(reportOut).contains("\"deliveryUsers\": 12"));
 	}

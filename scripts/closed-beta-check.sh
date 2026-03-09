@@ -2,6 +2,7 @@
 set -euo pipefail
 
 API_BASE_URL="http://localhost:8080"
+API_KEY="${PRESS_API_KEY:-}"
 REPORT_DATE="$(date -d "yesterday" +%F)"
 PREVIEW_HOURS="24"
 PREVIEW_LIMIT="5"
@@ -19,6 +20,7 @@ Usage: ./scripts/closed-beta-check.sh [options]
 
 Options:
   --api-base-url URL       API base URL (default: http://localhost:8080)
+  --api-key KEY            Internal API key for protected endpoints
   --report-date YYYY-MM-DD Report date for /api/analytics/product-report/daily (default: yesterday)
   --preview-hours N        Hours for /api/brief/daily/text preview (default: 24)
   --preview-limit N        Limit for /api/brief/daily/text preview (default: 5)
@@ -34,6 +36,10 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--api-base-url)
 			API_BASE_URL="${2:-}"
+			shift 2
+			;;
+		--api-key)
+			API_KEY="${2:-}"
 			shift 2
 			;;
 		--report-date)
@@ -95,6 +101,14 @@ curl_json() {
 	curl_text "$@"
 }
 
+curl_internal_api() {
+	local extra=()
+	if [[ -n "$API_KEY" ]]; then
+		extra+=(-H "X-PressNexus-Api-Key: $API_KEY")
+	fi
+	curl_text "${extra[@]}" "$@"
+}
+
 PREVIEW_TEXT="$(curl_text \
 	"$API_BASE_URL/api/brief/daily/text?hours=$PREVIEW_HOURS&limit=$PREVIEW_LIMIT&lang=$LANGUAGE")"
 
@@ -104,11 +118,11 @@ fi
 
 SEND_RESULT="skipped"
 if [[ "$TRIGGER_SEND_NOW" == "true" ]]; then
-	SEND_RESPONSE="$(curl_json -X POST "$API_BASE_URL/api/brief/daily/send")"
+	SEND_RESPONSE="$(curl_internal_api -X POST "$API_BASE_URL/api/brief/daily/send")"
 	SEND_RESULT="$(jq -r '.sentChats // 0' <<<"$SEND_RESPONSE")"
 fi
 
-REPORT_JSON="$(curl_json "$API_BASE_URL/api/analytics/product-report/daily?date=$REPORT_DATE")"
+REPORT_JSON="$(curl_internal_api "$API_BASE_URL/api/analytics/product-report/daily?date=$REPORT_DATE")"
 if ! jq -e . >/dev/null 2>&1 <<<"$REPORT_JSON"; then
 	echo "Invalid JSON payload from /api/analytics/product-report/daily" >&2
 	exit 1

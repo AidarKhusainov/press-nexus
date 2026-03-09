@@ -172,6 +172,83 @@ class MvpProgressUpdateScriptContractTest {
 		assertFalse(updated.contains("| Premium intent |"));
 	}
 
+	@Test
+	void scriptSendsApiKeyToProtectedReportEndpoint(@TempDir final Path tempDir) throws Exception {
+		assumeTrue(commandAvailable("jq"), "jq is required for the script contract test");
+
+		final Path projectRoot = projectRoot();
+		final Path sourceMvp = projectRoot.resolve("docs/MVP_PROGRESS.md");
+		final Path targetMvp = tempDir.resolve("MVP_PROGRESS.md");
+		Files.copy(sourceMvp, targetMvp);
+
+		final HttpServer server;
+		try {
+			server = HttpServer.create(new InetSocketAddress(0), 0);
+		} catch (final SocketException exception) {
+			assumeTrue(false, "local HttpServer sockets are not permitted in this environment");
+			return;
+		}
+		server.createContext("/api/analytics/product-report/daily", exchange -> {
+			final String apiKey = exchange.getRequestHeaders().getFirst("X-PressNexus-Api-Key");
+			if (!"test-internal-key".equals(apiKey)) {
+				exchange.sendResponseHeaders(401, -1);
+				exchange.close();
+				return;
+			}
+			final byte[] body = """
+				{
+				  "reportDate": "2026-03-08",
+				  "deliveryUsers": 80,
+				  "feedbackUsers": 35,
+				  "usefulCount": 30,
+				  "noiseCount": 8,
+				  "anxiousCount": 2,
+				  "usefulRatePct": 75.0,
+				  "noiseRatePct": 20.0,
+				  "d1CohortSize": 12,
+				  "d1RetainedUsers": 5,
+				  "d1RetentionPct": 41.7,
+				  "d7CohortSize": 10,
+				  "d7RetainedUsers": 4,
+				  "d7RetentionPct": 40.0
+				}
+				""".getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().add("Content-Type", "application/json");
+			exchange.sendResponseHeaders(200, body.length);
+			exchange.getResponseBody().write(body);
+			exchange.close();
+		});
+		server.start();
+
+		try {
+			final Process process = new ProcessBuilder(
+				"/bin/bash",
+				projectRoot.resolve("scripts/update-mvp-progress-go-no-go.sh").toString(),
+				"--date",
+				"2026-03-08",
+				"--api-base-url",
+				"http://127.0.0.1:" + server.getAddress().getPort(),
+				"--api-key",
+				"test-internal-key",
+				"--target-file",
+				targetMvp.toString(),
+				"--today",
+				"2026-03-09"
+			)
+				.directory(projectRoot.toFile())
+				.redirectErrorStream(true)
+				.start();
+
+			final String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+			assertEquals(0, process.waitFor(), () -> "Script failed:\n" + output);
+		} finally {
+			server.stop(0);
+		}
+
+		final String updated = Files.readString(targetMvp);
+		assertTrue(updated.contains("| D7 retention | `>= 35%` | 40.0% (4/10, 2026-03-08) | DONE |"));
+	}
+
 	private boolean commandAvailable(final String command) throws Exception {
 		final Process process = new ProcessBuilder("/bin/bash", "-lc", "command -v " + command).start();
 		return process.waitFor() == 0;

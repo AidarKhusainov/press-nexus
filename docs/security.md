@@ -6,6 +6,8 @@
 - Use env vars or secret manager only.
 - Mask sensitive data in logs.
 - Least privilege for DB and external APIs.
+- Internal operational endpoints must be protected with `X-PressNexus-Api-Key` when `press.security.internal-api.enabled=true`.
+- Telegram webhook ingress should validate `X-Telegram-Bot-Api-Secret-Token`.
 
 ## Dependency Hygiene
 

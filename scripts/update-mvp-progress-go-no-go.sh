@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_FILE="$REPO_ROOT/docs/MVP_PROGRESS.md"
 
 API_BASE_URL="http://localhost:8080"
+API_KEY="${PRESS_API_KEY:-}"
 PROMETHEUS_BASE_URL=""
 PROMETHEUS_APPLICATION="app"
 REPORT_DATE="$(date -d "yesterday" +%F)"
@@ -23,6 +24,7 @@ Usage: ./scripts/update-mvp-progress-go-no-go.sh [options]
 Options:
   --date YYYY-MM-DD          Report date for /api/analytics/product-report/daily (default: yesterday)
   --api-base-url URL         API base URL (default: http://localhost:8080)
+  --api-key KEY              Internal API key for protected report endpoint
   --prometheus-base-url URL  Read metrics from Prometheus instant query API instead of HTTP report API
   --prometheus-application   `application` label for Prometheus metrics (default: app)
   --report-json-file PATH    Read ProductDailyReport JSON from file instead of HTTP call
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--api-base-url)
 			API_BASE_URL="${2:-}"
+			shift 2
+			;;
+		--api-key)
+			API_KEY="${2:-}"
 			shift 2
 			;;
 		--prometheus-base-url)
@@ -97,6 +103,14 @@ curl_json() {
 		--retry-delay "$CURL_RETRY_DELAY_SECONDS" \
 		--retry-all-errors \
 		"$@"
+}
+
+curl_internal_api_json() {
+	local extra=()
+	if [[ -n "$API_KEY" ]]; then
+		extra+=(-H "X-PressNexus-Api-Key: $API_KEY")
+	fi
+	curl_json "${extra[@]}" "$@"
 }
 
 fetch_prometheus_scalar() {
@@ -180,7 +194,7 @@ elif [[ -n "$PROMETHEUS_BASE_URL" ]]; then
 			d7RetentionPct: $d7RetentionPct
 		}')"
 else
-	REPORT_JSON="$(curl_json "$API_BASE_URL/api/analytics/product-report/daily?date=$REPORT_DATE")"
+	REPORT_JSON="$(curl_internal_api_json "$API_BASE_URL/api/analytics/product-report/daily?date=$REPORT_DATE")"
 fi
 
 if ! jq -e . >/dev/null 2>&1 <<<"$REPORT_JSON"; then
