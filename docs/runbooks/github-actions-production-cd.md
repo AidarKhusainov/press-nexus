@@ -17,7 +17,7 @@ Repository or `production` environment secrets:
 - `PROD_SSH_USER` - SSH user on the production server
 - `PROD_HOST` - production server host or IP
 - `PROD_SSH_KEY` - private key for the production server
-- `PROD_SSH_HOSTKEY` - pinned SSH host key entry for `known_hosts`
+- `PROD_SSH_HOSTKEY` - pinned SSH host key entry for `known_hosts` as a full line; for a non-default SSH port use the `[host]:port keytype base64...` format
 - `PROD_GHCR_USERNAME` - GHCR username allowed to pull private images
 - `PROD_GHCR_TOKEN` - GHCR token with `read:packages`
 - `PRESS_DB_USER` - optional, defaults to `pressnexus`

@@ -115,11 +115,9 @@ jobs:
           log-public-key: false
 
       - name: Trust production host
-        env:
-          PROD_SSH_HOSTKEY: ${{ secrets.PROD_SSH_HOSTKEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '[%s]:%s %s\n' "${PROD_HOST}" "${PROD_PORT}" "${PROD_SSH_HOSTKEY}" > ~/.ssh/known_hosts
+          printf '%s\n' "${{ secrets.PROD_SSH_HOSTKEY }}" > ~/.ssh/known_hosts
 
       - name: Create deploy bundle
         env:
