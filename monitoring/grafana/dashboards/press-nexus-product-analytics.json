@@ -1,0 +1,340 @@
+{
+  "id": null,
+  "uid": "press-nexus-product-analytics",
+  "title": "Press Nexus Product Analytics",
+  "tags": ["press-nexus", "product", "mvp"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "application",
+        "type": "query",
+        "label": "Application",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(press_product_report_d1_retention_pct, application)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "selected": true,
+          "text": "app",
+          "value": "app"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "D1 Retention",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "last_over_time(press_product_report_d1_retention_pct{application=\"$application\"}[2d])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 35 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "D7 Retention",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "last_over_time(press_product_report_d7_retention_pct{application=\"$application\"}[8d])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 35 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Useful Rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "last_over_time(press_product_report_useful_rate_pct{application=\"$application\"}[2d])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 70 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Noise Rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "last_over_time(press_product_report_noise_rate_pct{application=\"$application\"}[2d])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Retention Trend (D1/D7)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "press_product_report_d1_retention_pct{application=\"$application\"}",
+          "legendFormat": "D1",
+          "refId": "A"
+        },
+        {
+          "expr": "press_product_report_d7_retention_pct{application=\"$application\"}",
+          "legendFormat": "D7",
+          "refId": "B"
+        },
+        {
+          "expr": "vector(35)",
+          "legendFormat": "Target",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Quality Trend (Useful/Noise)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "press_product_report_useful_rate_pct{application=\"$application\"}",
+          "legendFormat": "Useful",
+          "refId": "A"
+        },
+        {
+          "expr": "press_product_report_noise_rate_pct{application=\"$application\"}",
+          "legendFormat": "Noise",
+          "refId": "B"
+        },
+        {
+          "expr": "vector(70)",
+          "legendFormat": "Useful target",
+          "refId": "C"
+        },
+        {
+          "expr": "vector(20)",
+          "legendFormat": "Noise max",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Feedback Counts by Type",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "expr": "press_product_report_useful_count{application=\"$application\"}",
+          "legendFormat": "Useful",
+          "refId": "A"
+        },
+        {
+          "expr": "press_product_report_noise_count{application=\"$application\"}",
+          "legendFormat": "Noise",
+          "refId": "B"
+        },
+        {
+          "expr": "press_product_report_anxious_count{application=\"$application\"}",
+          "legendFormat": "Anxious",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Delivery vs Feedback Users",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "expr": "press_product_report_delivery_users{application=\"$application\"}",
+          "legendFormat": "Delivered users",
+          "refId": "A"
+        },
+        {
+          "expr": "press_product_report_feedback_users{application=\"$application\"}",
+          "legendFormat": "Feedback users",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Feedback CTR",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "last_over_time(press_product_report_feedback_ctr_pct{application=\"$application\"}[2d])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Premium Intent",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 24 },
+      "targets": [
+        {
+          "expr": "last_over_time(press_product_report_premium_intent_pct{application=\"$application\"}[2d])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Retention Cohort Size",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
+      "targets": [
+        {
+          "expr": "press_product_report_d1_cohort_size{application=\"$application\"}",
+          "legendFormat": "D1 cohort",
+          "refId": "A"
+        },
+        {
+          "expr": "press_product_report_d7_cohort_size{application=\"$application\"}",
+          "legendFormat": "D7 cohort",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

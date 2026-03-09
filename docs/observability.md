@@ -13,6 +13,7 @@
 
 - `Press Nexus Overview`
 - `Press Nexus Logs`
+- `Press Nexus Product Analytics`
 
 ## Operational Rule
 

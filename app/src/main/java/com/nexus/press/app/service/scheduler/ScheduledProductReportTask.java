@@ -9,6 +9,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import com.nexus.press.app.config.property.ProductReportProperties;
 import com.nexus.press.app.observability.AppMetrics;
+import com.nexus.press.app.service.analytics.ProductDailyReport;
+import com.nexus.press.app.service.analytics.ProductReportFormatter;
 import com.nexus.press.app.service.analytics.ProductReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Component;
 public class ScheduledProductReportTask {
 
 	private final ProductReportService productReportService;
+	private final ProductReportFormatter productReportFormatter;
 	private final ProductReportProperties productReportProperties;
 	private final AppMetrics appMetrics;
 	private Disposable subscription;
@@ -52,11 +55,31 @@ public class ScheduledProductReportTask {
 	private Mono<Void> runDailyReport() {
 		final var timerSample = appMetrics.startJobTimer();
 		final LocalDate reportDate = LocalDate.now(ZoneId.systemDefault()).minusDays(1);
-		return productReportService.buildDailyReportText(reportDate)
-			.doOnNext(report -> log.info("Ежедневный product report:\n{}", report))
+		return productReportService.buildDailyReport(reportDate)
+			.doOnNext(this::publishProductReportMetrics)
+			.map(productReportFormatter::toText)
+			.doOnNext(reportText -> log.info("Ежедневный product report:\n{}", reportText))
 			.doOnNext(report -> appMetrics.jobSuccess("product_report_daily", timerSample))
 			.doOnError(error -> appMetrics.jobFailure("product_report_daily", timerSample, error))
 			.then();
+	}
+
+	private void publishProductReportMetrics(final ProductDailyReport report) {
+		appMetrics.productReportSnapshot(
+			report.d1RetentionPct(),
+			report.d7RetentionPct(),
+			report.usefulRatePct(),
+			report.noiseRatePct(),
+			report.feedbackCtrPct(),
+			report.premiumIntentPct(),
+			report.deliveryUsers(),
+			report.feedbackUsers(),
+			report.usefulCount(),
+			report.noiseCount(),
+			report.anxiousCount(),
+			report.d1CohortSize(),
+			report.d7CohortSize()
+		);
 	}
 
 	@PreDestroy

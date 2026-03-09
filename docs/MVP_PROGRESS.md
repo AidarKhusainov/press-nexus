@@ -18,7 +18,7 @@ Last updated: 2026-03-09
 | A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization/dedup are implemented, but duplicate reduction criterion is not confirmed by report |
 | B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, and 3-block format exist; emotional filtering is partial |
 | C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented, KPI validation is pending |
-| D. Feedback + Analytics | IN_PROGRESS | Technical metrics and monitoring exist; feedback/premium event schema and Telegram handlers are implemented, but D1/D7 and dashboard are not fully implemented |
+| D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
 | E. Premium Test | TODO | Deferred until beta stabilization: product is temporarily fully free |
 
 ## Task Breakdown (A–E)
@@ -40,7 +40,7 @@ Last updated: 2026-03-09
 | C | Onboarding criterion < 1 min | CHECK | Completion time is now measured via metric `press.onboarding.completion.seconds` and onboarding completion logs; target validation requires real beta data |
 | D | Useful/Noise/Anxious buttons | DONE | `service/delivery/DailyBriefDeliveryService.java` (inline keyboard), `service/profile/TelegramOnboardingBotService.java` (callback handler), `service/feedback/FeedbackEventService.java` + `web/FeedbackController.java` (write API to `feedback_events`) |
 | D | delivery/click/feedback/unsubscribe events | DONE | `service/delivery/DailyBriefDeliveryService.java` (click/unsubscribe inline callbacks), `service/profile/TelegramOnboardingBotService.java` (`click` URL handoff + `/unsubscribe`/`/stop` + unsubscribe callback), `service/profile/UserProfileService.java` (`digest_enabled` toggle), запись в `feedback_events` через `service/feedback/FeedbackEventService.java` |
-| D | D1/D7 + quality dashboard | IN_PROGRESS | Daily product-report API added: `service/analytics/ProductReportService.java`, `web/ProductReportController.java`; Grafana dashboard not assembled yet |
+| D | D1/D7 + quality dashboard | DONE | Product snapshot gauges in `observability/AppMetrics.java` + scheduler publish in `service/scheduler/ScheduledProductReportTask.java` + dashboard `monitoring/grafana/dashboards/press-nexus-product-analytics.json` |
 | D | Daily auto-report | DONE | Scheduler `service/scheduler/ScheduledProductReportTask.java` + formatter `service/analytics/ProductReportFormatter.java` implemented |
 | E | Premium screen/message 199/299/399 | TODO | Deferred: paid offers are temporarily not shown to users |
 | E | Collect "ready to pay" intent | TODO | Deferred: intent is temporarily not collected during beta |
@@ -59,7 +59,7 @@ Last updated: 2026-03-09
 | 7 | Telegram onboarding + topics | DONE |
 | 8 | Telegram delivery job | DONE |
 | 9 | Feedback events | DONE |
-| 10 | Analytics + daily quality-report | IN_PROGRESS |
+| 10 | Analytics + daily quality-report | DONE |
 | 11 | Closed beta for 20 users | TODO |
 | 12 | Noise/ranking adjustments | TODO |
 | 13 | Expand to 50–100 users | TODO |
@@ -76,7 +76,7 @@ Last updated: 2026-03-09
 
 ## Next Tasks (priority)
 
-1. Build Grafana dashboard for D1/D7 + quality based on `ProductReportService`.
+1. Fill Go/No-Go metrics from real beta traffic using dashboard `Press Nexus Product Analytics`.
 2. Return to premium intent test after beta stabilization.
 
 ## How to Update Progress

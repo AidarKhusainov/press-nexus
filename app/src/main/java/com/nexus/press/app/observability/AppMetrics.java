@@ -18,9 +18,11 @@ public class AppMetrics {
 
 	private final MeterRegistry meterRegistry;
 	private final ConcurrentMap<String, AtomicInteger> queueDepthByName = new ConcurrentHashMap<>();
+	private final ProductReportSnapshotGaugeValues productReportSnapshotGaugeValues = new ProductReportSnapshotGaugeValues();
 
 	public AppMetrics(final MeterRegistry meterRegistry) {
 		this.meterRegistry = meterRegistry;
+		registerProductReportSnapshotGauges();
 	}
 
 	public void registerQueue(final String queueName) {
@@ -225,11 +227,195 @@ public class AppMetrics {
 			.record(completionSeconds);
 	}
 
+	public void productReportSnapshot(
+		final double d1RetentionPct,
+		final double d7RetentionPct,
+		final double usefulRatePct,
+		final double noiseRatePct,
+		final double feedbackCtrPct,
+		final double premiumIntentPct,
+		final int deliveryUsers,
+		final int feedbackUsers,
+		final int usefulCount,
+		final int noiseCount,
+		final int anxiousCount,
+		final int d1CohortSize,
+		final int d7CohortSize
+	) {
+		productReportSnapshotGaugeValues.update(
+			d1RetentionPct,
+			d7RetentionPct,
+			usefulRatePct,
+			noiseRatePct,
+			feedbackCtrPct,
+			premiumIntentPct,
+			deliveryUsers,
+			feedbackUsers,
+			usefulCount,
+			noiseCount,
+			anxiousCount,
+			d1CohortSize,
+			d7CohortSize
+		);
+	}
+
+	private void registerProductReportSnapshotGauges() {
+		Gauge.builder("press.product.report.d1.retention.pct", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d1RetentionPct)
+			.description("Latest D1 retention percent from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.d7.retention.pct", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d7RetentionPct)
+			.description("Latest D7 retention percent from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.useful.rate.pct", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::usefulRatePct)
+			.description("Latest useful feedback rate percent from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.noise.rate.pct", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::noiseRatePct)
+			.description("Latest noise feedback rate percent from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.feedback.ctr.pct", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::feedbackCtrPct)
+			.description("Latest feedback CTR percent from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.premium.intent.pct", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::premiumIntentPct)
+			.description("Latest premium intent percent from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.delivery.users", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::deliveryUsers)
+			.description("Latest delivered users count from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.feedback.users", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::feedbackUsers)
+			.description("Latest feedback users count from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.useful.count", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::usefulCount)
+			.description("Latest useful feedback count from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.noise.count", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::noiseCount)
+			.description("Latest noise feedback count from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.anxious.count", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::anxiousCount)
+			.description("Latest anxious feedback count from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.d1.cohort.size", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d1CohortSize)
+			.description("Latest D1 cohort size from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.d7.cohort.size", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d7CohortSize)
+			.description("Latest D7 cohort size from daily product report")
+			.register(meterRegistry);
+	}
+
 	private String errorTag(final Throwable throwable) {
 		if (throwable == null) {
 			return "UNKNOWN";
 		}
 		final var simpleName = throwable.getClass().getSimpleName();
 		return simpleName == null || simpleName.isBlank() ? throwable.getClass().getName() : simpleName;
+	}
+
+	private static final class ProductReportSnapshotGaugeValues {
+
+		private volatile double d1RetentionPct;
+		private volatile double d7RetentionPct;
+		private volatile double usefulRatePct;
+		private volatile double noiseRatePct;
+		private volatile double feedbackCtrPct;
+		private volatile double premiumIntentPct;
+		private volatile double deliveryUsers;
+		private volatile double feedbackUsers;
+		private volatile double usefulCount;
+		private volatile double noiseCount;
+		private volatile double anxiousCount;
+		private volatile double d1CohortSize;
+		private volatile double d7CohortSize;
+
+		private void update(
+			final double d1RetentionPct,
+			final double d7RetentionPct,
+			final double usefulRatePct,
+			final double noiseRatePct,
+			final double feedbackCtrPct,
+			final double premiumIntentPct,
+			final int deliveryUsers,
+			final int feedbackUsers,
+			final int usefulCount,
+			final int noiseCount,
+			final int anxiousCount,
+			final int d1CohortSize,
+			final int d7CohortSize
+		) {
+			this.d1RetentionPct = percentOrZero(d1RetentionPct);
+			this.d7RetentionPct = percentOrZero(d7RetentionPct);
+			this.usefulRatePct = percentOrZero(usefulRatePct);
+			this.noiseRatePct = percentOrZero(noiseRatePct);
+			this.feedbackCtrPct = percentOrZero(feedbackCtrPct);
+			this.premiumIntentPct = percentOrZero(premiumIntentPct);
+			this.deliveryUsers = nonNegativeOrZero(deliveryUsers);
+			this.feedbackUsers = nonNegativeOrZero(feedbackUsers);
+			this.usefulCount = nonNegativeOrZero(usefulCount);
+			this.noiseCount = nonNegativeOrZero(noiseCount);
+			this.anxiousCount = nonNegativeOrZero(anxiousCount);
+			this.d1CohortSize = nonNegativeOrZero(d1CohortSize);
+			this.d7CohortSize = nonNegativeOrZero(d7CohortSize);
+		}
+
+		private double d1RetentionPct() {
+			return d1RetentionPct;
+		}
+
+		private double d7RetentionPct() {
+			return d7RetentionPct;
+		}
+
+		private double usefulRatePct() {
+			return usefulRatePct;
+		}
+
+		private double noiseRatePct() {
+			return noiseRatePct;
+		}
+
+		private double feedbackCtrPct() {
+			return feedbackCtrPct;
+		}
+
+		private double premiumIntentPct() {
+			return premiumIntentPct;
+		}
+
+		private double deliveryUsers() {
+			return deliveryUsers;
+		}
+
+		private double feedbackUsers() {
+			return feedbackUsers;
+		}
+
+		private double usefulCount() {
+			return usefulCount;
+		}
+
+		private double noiseCount() {
+			return noiseCount;
+		}
+
+		private double anxiousCount() {
+			return anxiousCount;
+		}
+
+		private double d1CohortSize() {
+			return d1CohortSize;
+		}
+
+		private double d7CohortSize() {
+			return d7CohortSize;
+		}
+
+		private double percentOrZero(final double value) {
+			if (Double.isNaN(value) || Double.isInfinite(value)) {
+				return 0.0;
+			}
+			return Math.max(0.0, Math.min(100.0, value));
+		}
+
+		private double nonNegativeOrZero(final int value) {
+			return Math.max(0, value);
+		}
 	}
 }
