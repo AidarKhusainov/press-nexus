@@ -19,7 +19,7 @@ Last updated: 2026-03-09
 | B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; usefulness KPI validation is pending beta data |
 | C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented, KPI validation is pending |
 | D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
-| E. Premium Test | TODO | Deferred until beta stabilization: product is temporarily fully free |
+| E. Premium Test | IN_PROGRESS | Premium offer screen, Telegram intent capture, and segment conversion analytics are implemented behind `press.delivery.telegram.premium-enabled`; KPI validation on real beta traffic is pending |
 
 ## Task Breakdown (A–E)
 
@@ -42,9 +42,9 @@ Last updated: 2026-03-09
 | D | delivery/click/feedback/unsubscribe events | DONE | `service/delivery/DailyBriefDeliveryService.java` (click/unsubscribe inline callbacks), `service/profile/TelegramOnboardingBotService.java` (`click` URL handoff + `/unsubscribe`/`/stop` + unsubscribe callback), `service/profile/UserProfileService.java` (`digest_enabled` toggle), запись в `feedback_events` через `service/feedback/FeedbackEventService.java` |
 | D | D1/D7 + quality dashboard | DONE | Product snapshot gauges in `observability/AppMetrics.java` + scheduler publish in `service/scheduler/ScheduledProductReportTask.java` + dashboard `monitoring/grafana/dashboards/press-nexus-product-analytics.json` |
 | D | Daily auto-report | DONE | Scheduler `service/scheduler/ScheduledProductReportTask.java` + formatter `service/analytics/ProductReportFormatter.java` implemented |
-| E | Premium screen/message 199/299/399 | TODO | Deferred: paid offers are temporarily not shown to users |
-| E | Collect "ready to pay" intent | TODO | Deferred: intent is temporarily not collected during beta |
-| E | Intent conversion by segments | TODO | Not implemented |
+| E | Premium screen/message 199/299/399 | DONE | `/premium` offer with inline buttons `199/299/399` in `service/profile/TelegramOnboardingBotService.java` behind `press.delivery.telegram.premium-enabled` |
+| E | Collect "ready to pay" intent | DONE | Callback `pi|price|segment` + запись в `premium_intent_events` через `service/premium/PremiumIntentEventService.java` |
+| E | Intent conversion by segments | DONE | Segment breakdown in `/api/analytics/product-report/daily` and text report via `service/analytics/ProductReportService.java`, `service/analytics/ProductReportFormatter.java` |
 
 ## Day-by-Day Plan (from `plan.txt`)
 
@@ -63,7 +63,7 @@ Last updated: 2026-03-09
 | 11 | Closed beta for 20 users | TODO |
 | 12 | Noise/ranking adjustments | TODO |
 | 13 | Expand to 50–100 users | TODO |
-| 14 | Premium intent test + go/no-go | TODO |
+| 14 | Premium intent test + go/no-go | IN_PROGRESS |
 
 ## Go/No-Go Metrics
 
@@ -77,7 +77,7 @@ Last updated: 2026-03-09
 ## Next Tasks (priority)
 
 1. Fill Go/No-Go metrics from real beta traffic via `./scripts/update-mvp-progress-go-no-go.sh` (source: dashboard `Press Nexus Product Analytics` / API `/api/analytics/product-report/daily`).
-2. Return to premium intent test after beta stabilization.
+2. Enable `press.delivery.telegram.premium-enabled=true` for beta cohort and validate premium intent conversion by segments in `/api/analytics/product-report/daily`.
 
 ## How to Update Progress
 

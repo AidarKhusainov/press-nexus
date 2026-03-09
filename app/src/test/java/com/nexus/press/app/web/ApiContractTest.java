@@ -171,7 +171,9 @@ class ApiContractTest {
 			.expectStatus().isOk()
 			.expectBody()
 			.jsonPath("$.reportDate").isEqualTo("2026-03-09")
-			.jsonPath("$.d1RetentionPct").isEqualTo(40.0);
+			.jsonPath("$.d1RetentionPct").isEqualTo(40.0)
+			.jsonPath("$.premiumIntentSegments[0].segment").isEqualTo("economy")
+			.jsonPath("$.premiumIntentSegments[0].intentPct").isEqualTo(20.0);
 
 		webTestClient.get()
 			.uri("/api/analytics/product-report/daily/text")
@@ -272,7 +274,11 @@ class ApiContractTest {
 			40.0,
 			10,
 			4,
-			40.0
+			40.0,
+			List.of(
+				new com.nexus.press.app.service.analytics.PremiumIntentSegmentReport("economy", 50, 10, 12, 20.0),
+				new com.nexus.press.app.service.analytics.PremiumIntentSegmentReport("news", 50, 0, 0, 0.0)
+			)
 		);
 	}
 }

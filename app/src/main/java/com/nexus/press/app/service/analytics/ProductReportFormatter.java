@@ -1,6 +1,7 @@
 package com.nexus.press.app.service.analytics;
 
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
 
@@ -36,6 +37,9 @@ public class ProductReportFormatter {
 			- intent events: %d
 			- intent users: %d
 			- intent from delivered: %.1f%%
+			
+			Premium by segment:
+			%s
 			""".formatted(
 			DATE_FMT.format(report.reportDate()),
 			report.from(),
@@ -53,7 +57,24 @@ public class ProductReportFormatter {
 			report.feedbackCtrPct(),
 			report.premiumIntentEvents(),
 			report.premiumIntentUsers(),
-			report.premiumIntentPct()
+			report.premiumIntentPct(),
+			formatPremiumSegments(report.premiumIntentSegments())
 		).strip();
+	}
+
+	private String formatPremiumSegments(final List<PremiumIntentSegmentReport> premiumIntentSegments) {
+		if (premiumIntentSegments == null || premiumIntentSegments.isEmpty()) {
+			return "- no segment data yet";
+		}
+		return premiumIntentSegments.stream()
+			.map(segment -> "- %s: %.1f%% (%d/%d users, %d events)".formatted(
+				segment.segment(),
+				segment.intentPct(),
+				segment.intentUsers(),
+				segment.deliveredUsers(),
+				segment.intentEvents()
+			))
+			.reduce((left, right) -> left + "\n" + right)
+			.orElse("- no segment data yet");
 	}
 }

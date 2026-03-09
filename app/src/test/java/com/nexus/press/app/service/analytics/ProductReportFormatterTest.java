@@ -2,6 +2,7 @@ package com.nexus.press.app.service.analytics;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,7 +33,11 @@ class ProductReportFormatterTest {
 			40.0,
 			30,
 			9,
-			30.0
+			30.0,
+			List.of(
+				new PremiumIntentSegmentReport("economy", 25, 4, 5, 16.0),
+				new PremiumIntentSegmentReport("news", 30, 3, 4, 10.0)
+			)
 		);
 
 		final String text = formatter.toText(report);
@@ -43,5 +48,6 @@ class ProductReportFormatterTest {
 		assertTrue(text.contains("useful rate: 68.8%"));
 		assertTrue(text.contains("feedback CTR: 33.3%"));
 		assertTrue(text.contains("intent from delivered: 8.3%"));
+		assertTrue(text.contains("economy: 16.0% (4/25 users, 5 events)"));
 	}
 }

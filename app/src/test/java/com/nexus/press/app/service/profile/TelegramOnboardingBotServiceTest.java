@@ -15,6 +15,7 @@ import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
 import com.nexus.press.app.service.feedback.FeedbackEventType;
 import com.nexus.press.app.service.premium.PremiumIntentEventService;
+import com.nexus.press.app.service.premium.PremiumSegmentResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,6 +57,7 @@ class TelegramOnboardingBotServiceTest {
 			props,
 			feedbackEventService,
 			premiumIntentEventService,
+			new PremiumSegmentResolver(),
 			appMetrics
 		);
 	}

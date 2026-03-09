@@ -260,12 +260,25 @@ components:
         premiumIntentEvents: { type: integer }
         premiumIntentUsers: { type: integer }
         premiumIntentPct: { type: number, format: double }
+        premiumIntentSegments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PremiumIntentSegment'
         d1CohortSize: { type: integer }
         d1RetainedUsers: { type: integer }
         d1RetentionPct: { type: number, format: double }
         d7CohortSize: { type: integer }
         d7RetainedUsers: { type: integer }
         d7RetentionPct: { type: number, format: double }
+    PremiumIntentSegment:
+      type: object
+      required: [segment, deliveredUsers, intentUsers, intentEvents, intentPct]
+      properties:
+        segment: { type: string }
+        deliveredUsers: { type: integer }
+        intentUsers: { type: integer }
+        intentEvents: { type: integer }
+        intentPct: { type: number, format: double }
     SimilarItem:
       type: object
       required: [id, score]

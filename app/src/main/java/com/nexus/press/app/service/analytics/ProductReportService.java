@@ -4,9 +4,12 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -57,8 +60,29 @@ public class ProductReportService {
 		  AND u.onboarded_at < :cohortTo
 		""";
 
+	private static final String DELIVERED_USERS_TOPICS_SQL = """
+		SELECT COALESCE(string_agg(ut.topic, ',' ORDER BY ut.topic), '') AS topics_csv
+		FROM users u
+		LEFT JOIN user_topics ut ON ut.user_id = u.id
+		WHERE u.last_delivery_at >= :fromTs
+		  AND u.last_delivery_at < :toTs
+		GROUP BY u.id
+		""";
+
+	private static final String PREMIUM_INTENT_BY_SEGMENT_SQL = """
+		SELECT
+			COALESCE(NULLIF(BTRIM(segment), ''), 'general') AS segment,
+			COUNT(*) AS total_events,
+			COUNT(DISTINCT user_id) AS intent_users
+		FROM premium_intent_events
+		WHERE occurred_at >= :fromTs
+		  AND occurred_at < :toTs
+		GROUP BY COALESCE(NULLIF(BTRIM(segment), ''), 'general')
+		""";
+
 	private final DatabaseClient db;
 	private final ProductReportFormatter productReportFormatter;
+	private final PremiumSegmentAnalyticsCalculator premiumSegmentAnalyticsCalculator;
 
 	public Mono<ProductDailyReport> buildDailyReport(final LocalDate reportDate) {
 		final LocalDate date = reportDate == null ? LocalDate.now(ZoneId.systemDefault()).minusDays(1) : reportDate;
@@ -70,7 +94,9 @@ public class ProductReportService {
 				fetchDeliveryUsers(from, to),
 				fetchPremiumIntentStats(from, to),
 				fetchRetentionStats(date.minusDays(1), 1),
-				fetchRetentionStats(date.minusDays(7), 7)
+				fetchRetentionStats(date.minusDays(7), 7),
+				fetchDeliveredUserTopics(from, to),
+				fetchPremiumIntentStatsBySegment(from, to)
 			)
 			.map(tuple -> {
 				final FeedbackStats feedback = tuple.getT1();
@@ -78,8 +104,14 @@ public class ProductReportService {
 				final PremiumIntentStats premium = tuple.getT3();
 				final RetentionStats d1 = tuple.getT4();
 				final RetentionStats d7 = tuple.getT5();
+				final List<PremiumSegmentAnalyticsCalculator.DeliveredUserTopics> deliveredUserTopics = tuple.getT6();
+				final List<PremiumSegmentAnalyticsCalculator.PremiumIntentAggregate> premiumIntentBySegment = tuple.getT7();
 
 				final int qualityFeedbackBase = feedback.usefulCount() + feedback.noiseCount() + feedback.anxiousCount();
+				final List<PremiumIntentSegmentReport> premiumIntentSegments = premiumSegmentAnalyticsCalculator.build(
+					deliveredUserTopics,
+					premiumIntentBySegment
+				);
 				return new ProductDailyReport(
 					date,
 					from,
@@ -101,7 +133,8 @@ public class ProductReportService {
 					percent(d1.retainedUsers(), d1.cohortSize()),
 					d7.cohortSize(),
 					d7.retainedUsers(),
-					percent(d7.retainedUsers(), d7.cohortSize())
+					percent(d7.retainedUsers(), d7.cohortSize()),
+					premiumIntentSegments
 				);
 			});
 	}
@@ -165,8 +198,48 @@ public class ProductReportService {
 			.defaultIfEmpty(new RetentionStats(0, 0));
 	}
 
+	private Mono<List<PremiumSegmentAnalyticsCalculator.DeliveredUserTopics>> fetchDeliveredUserTopics(
+		final OffsetDateTime from,
+		final OffsetDateTime to
+	) {
+		return db.sql(DELIVERED_USERS_TOPICS_SQL)
+			.bind("fromTs", from)
+			.bind("toTs", to)
+			.map((row, metadata) -> new PremiumSegmentAnalyticsCalculator.DeliveredUserTopics(
+				parseTopics(row.get("topics_csv", String.class))
+			))
+			.all()
+			.collectList();
+	}
+
+	private Mono<List<PremiumSegmentAnalyticsCalculator.PremiumIntentAggregate>> fetchPremiumIntentStatsBySegment(
+		final OffsetDateTime from,
+		final OffsetDateTime to
+	) {
+		return db.sql(PREMIUM_INTENT_BY_SEGMENT_SQL)
+			.bind("fromTs", from)
+			.bind("toTs", to)
+			.map((row, metadata) -> new PremiumSegmentAnalyticsCalculator.PremiumIntentAggregate(
+				row.get("segment", String.class),
+				numberAsInt(row.get("total_events", Number.class)),
+				numberAsInt(row.get("intent_users", Number.class))
+			))
+			.all()
+			.collectList();
+	}
+
 	private int numberAsInt(final Number value) {
 		return value == null ? 0 : value.intValue();
+	}
+
+	private List<String> parseTopics(final String topicsCsv) {
+		if (!StringUtils.hasText(topicsCsv)) {
+			return List.of();
+		}
+		return Arrays.stream(topicsCsv.split(","))
+			.map(String::strip)
+			.filter(StringUtils::hasText)
+			.toList();
 	}
 
 	private double percent(final int numerator, final int denominator) {

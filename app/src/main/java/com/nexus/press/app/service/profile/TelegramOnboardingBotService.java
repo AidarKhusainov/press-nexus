@@ -8,7 +8,6 @@ import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import com.nexus.press.app.config.property.TelegramDeliveryProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
@@ -17,6 +16,7 @@ import com.nexus.press.app.service.feedback.FeedbackEventType;
 import com.nexus.press.app.service.feedback.TelegramFeedbackCallbackData;
 import com.nexus.press.app.service.premium.PremiumIntentCallbackData;
 import com.nexus.press.app.service.premium.PremiumIntentEventService;
+import com.nexus.press.app.service.premium.PremiumSegmentResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +32,7 @@ public class TelegramOnboardingBotService {
 	private final TelegramDeliveryProperties telegramDeliveryProperties;
 	private final FeedbackEventService feedbackEventService;
 	private final PremiumIntentEventService premiumIntentEventService;
+	private final PremiumSegmentResolver premiumSegmentResolver;
 	private final AppMetrics appMetrics;
 
 	public Mono<Void> handleUpdate(final Map<String, Object> update) {
@@ -494,55 +495,7 @@ public class TelegramOnboardingBotService {
 	}
 
 	private String resolvePremiumSegment(final List<String> topics) {
-		if (topics == null || topics.isEmpty()) {
-			return "general";
-		}
-		final Set<String> topicSet = Set.copyOf(topics);
-		int economy = 0;
-		int tech = 0;
-		int news = 0;
-		int lifestyle = 0;
-
-		for (final String topic : topicSet) {
-			if ("economy".equals(topic) || "business".equals(topic)) {
-				economy++;
-				continue;
-			}
-			if ("technology".equals(topic) || "science".equals(topic)) {
-				tech++;
-				continue;
-			}
-			if ("world".equals(topic) || "russia".equals(topic) || "politics".equals(topic) || "society".equals(topic)) {
-				news++;
-				continue;
-			}
-			if ("sports".equals(topic) || "culture".equals(topic)) {
-				lifestyle++;
-			}
-		}
-
-		final int max = Math.max(Math.max(economy, tech), Math.max(news, lifestyle));
-		if (max <= 0) {
-			return "general";
-		}
-		int leaders = 0;
-		leaders += economy == max ? 1 : 0;
-		leaders += tech == max ? 1 : 0;
-		leaders += news == max ? 1 : 0;
-		leaders += lifestyle == max ? 1 : 0;
-		if (leaders > 1) {
-			return "mixed";
-		}
-		if (economy == max) {
-			return "economy";
-		}
-		if (tech == max) {
-			return "tech";
-		}
-		if (news == max) {
-			return "news";
-		}
-		return "lifestyle";
+		return premiumSegmentResolver.resolve(topics);
 	}
 
 	private String commandArgument(final String text) {

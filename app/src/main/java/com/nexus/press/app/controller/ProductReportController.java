@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import com.nexus.press.app.service.analytics.ProductReportService;
 import com.nexus.press.app.web.generated.api.ProductReportApiDelegate;
 import com.nexus.press.app.web.generated.model.ProductDailyReport;
+import com.nexus.press.app.web.generated.model.PremiumIntentSegment;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
@@ -27,7 +28,7 @@ public class ProductReportController implements ProductReportApiDelegate {
 	}
 
 	private ProductDailyReport toApiReport(final com.nexus.press.app.service.analytics.ProductDailyReport source) {
-		return new ProductDailyReport(
+		final var report = new ProductDailyReport(
 			source.reportDate(),
 			source.from(),
 			source.to(),
@@ -49,6 +50,24 @@ public class ProductReportController implements ProductReportApiDelegate {
 			source.d7CohortSize(),
 			source.d7RetainedUsers(),
 			source.d7RetentionPct()
+		);
+		report.setPremiumIntentSegments(
+			source.premiumIntentSegments().stream()
+				.map(this::toApiPremiumIntentSegment)
+				.toList()
+		);
+		return report;
+	}
+
+	private PremiumIntentSegment toApiPremiumIntentSegment(
+		final com.nexus.press.app.service.analytics.PremiumIntentSegmentReport source
+	) {
+		return new PremiumIntentSegment(
+			source.segment(),
+			source.deliveredUsers(),
+			source.intentUsers(),
+			source.intentEvents(),
+			source.intentPct()
 		);
 	}
 }

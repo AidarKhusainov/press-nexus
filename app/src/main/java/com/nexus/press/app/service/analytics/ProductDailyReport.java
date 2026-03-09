@@ -2,6 +2,7 @@ package com.nexus.press.app.service.analytics;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 public record ProductDailyReport(
 	LocalDate reportDate,
@@ -24,6 +25,7 @@ public record ProductDailyReport(
 	double d1RetentionPct,
 	int d7CohortSize,
 	int d7RetainedUsers,
-	double d7RetentionPct
+	double d7RetentionPct,
+	List<PremiumIntentSegmentReport> premiumIntentSegments
 ) {
 }
