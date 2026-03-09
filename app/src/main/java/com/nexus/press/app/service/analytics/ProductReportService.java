@@ -61,7 +61,7 @@ public class ProductReportService {
 		""";
 
 	private static final String DELIVERED_USERS_TOPICS_SQL = """
-		SELECT COALESCE(string_agg(ut.topic, ',' ORDER BY ut.topic), '') AS topics_csv
+		SELECT COALESCE(string_agg(ut.topic_slug, ',' ORDER BY ut.topic_slug), '') AS topics_csv
 		FROM users u
 		LEFT JOIN user_topics ut ON ut.user_id = u.id
 		WHERE u.last_delivery_at >= :fromTs

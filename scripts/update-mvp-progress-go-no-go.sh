@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_FILE="$REPO_ROOT/docs/MVP_PROGRESS.md"
 
 API_BASE_URL="http://localhost:8080"
+PROMETHEUS_BASE_URL=""
+PROMETHEUS_APPLICATION="app"
 REPORT_DATE="$(date -d "yesterday" +%F)"
 REPORT_JSON_FILE=""
 DRY_RUN="false"
@@ -21,6 +23,8 @@ Usage: ./scripts/update-mvp-progress-go-no-go.sh [options]
 Options:
   --date YYYY-MM-DD          Report date for /api/analytics/product-report/daily (default: yesterday)
   --api-base-url URL         API base URL (default: http://localhost:8080)
+  --prometheus-base-url URL  Read metrics from Prometheus instant query API instead of HTTP report API
+  --prometheus-application   `application` label for Prometheus metrics (default: app)
   --report-json-file PATH    Read ProductDailyReport JSON from file instead of HTTP call
   --target-file PATH         Override docs/MVP_PROGRESS.md target path
   --today YYYY-MM-DD         Override "Last updated" value (default: current day)
@@ -37,6 +41,14 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--api-base-url)
 			API_BASE_URL="${2:-}"
+			shift 2
+			;;
+		--prometheus-base-url)
+			PROMETHEUS_BASE_URL="${2:-}"
+			shift 2
+			;;
+		--prometheus-application)
+			PROMETHEUS_APPLICATION="${2:-}"
 			shift 2
 			;;
 		--report-json-file)
@@ -77,20 +89,98 @@ if [[ ! -f "$TARGET_FILE" ]]; then
 	exit 1
 fi
 
+curl_json() {
+	curl --fail --show-error --silent \
+		--connect-timeout "$CURL_MAX_TIME_SECONDS" \
+		--max-time "$CURL_MAX_TIME_SECONDS" \
+		--retry "$CURL_RETRY_COUNT" \
+		--retry-delay "$CURL_RETRY_DELAY_SECONDS" \
+		--retry-all-errors \
+		"$@"
+}
+
+fetch_prometheus_scalar() {
+	local query="$1"
+	local response
+	response="$(curl_json --get --data-urlencode "query=$query" "$PROMETHEUS_BASE_URL/api/v1/query")"
+	jq -r 'if .status == "success" then (.data.result[0].value[1] // empty) else empty end' <<<"$response"
+}
+
+prometheus_number_or_zero() {
+	local query="$1"
+	local value
+	value="$(fetch_prometheus_scalar "$query")"
+	if [[ -z "$value" || "$value" == "null" ]]; then
+		echo "0"
+	else
+		echo "$value"
+	fi
+}
+
 if [[ -n "$REPORT_JSON_FILE" ]]; then
 	if [[ ! -f "$REPORT_JSON_FILE" ]]; then
 		echo "Report JSON file not found: $REPORT_JSON_FILE" >&2
 		exit 1
 	fi
 	REPORT_JSON="$(cat "$REPORT_JSON_FILE")"
+elif [[ -n "$PROMETHEUS_BASE_URL" ]]; then
+	short_window="2d"
+	long_window="8d"
+	label_selector="{application=\"$PROMETHEUS_APPLICATION\"}"
+
+	delivery_users="$(prometheus_number_or_zero "last_over_time(press_product_report_delivery_users${label_selector}[${short_window}])")"
+	feedback_users="$(prometheus_number_or_zero "last_over_time(press_product_report_feedback_users${label_selector}[${short_window}])")"
+	useful_count="$(prometheus_number_or_zero "last_over_time(press_product_report_useful_count${label_selector}[${short_window}])")"
+	noise_count="$(prometheus_number_or_zero "last_over_time(press_product_report_noise_count${label_selector}[${short_window}])")"
+	anxious_count="$(prometheus_number_or_zero "last_over_time(press_product_report_anxious_count${label_selector}[${short_window}])")"
+	useful_rate_pct="$(prometheus_number_or_zero "last_over_time(press_product_report_useful_rate_pct${label_selector}[${short_window}])")"
+	noise_rate_pct="$(prometheus_number_or_zero "last_over_time(press_product_report_noise_rate_pct${label_selector}[${short_window}])")"
+	premium_intent_users="$(prometheus_number_or_zero "last_over_time(press_product_report_premium_intent_users${label_selector}[${short_window}])")"
+	premium_intent_pct="$(prometheus_number_or_zero "last_over_time(press_product_report_premium_intent_pct${label_selector}[${short_window}])")"
+	d1_cohort_size="$(prometheus_number_or_zero "last_over_time(press_product_report_d1_cohort_size${label_selector}[${short_window}])")"
+	d1_retained_users="$(prometheus_number_or_zero "last_over_time(press_product_report_d1_retained_users${label_selector}[${short_window}])")"
+	d1_retention_pct="$(prometheus_number_or_zero "last_over_time(press_product_report_d1_retention_pct${label_selector}[${short_window}])")"
+	d7_cohort_size="$(prometheus_number_or_zero "last_over_time(press_product_report_d7_cohort_size${label_selector}[${long_window}])")"
+	d7_retained_users="$(prometheus_number_or_zero "last_over_time(press_product_report_d7_retained_users${label_selector}[${long_window}])")"
+	d7_retention_pct="$(prometheus_number_or_zero "last_over_time(press_product_report_d7_retention_pct${label_selector}[${long_window}])")"
+
+	REPORT_JSON="$(jq -n \
+		--arg reportDate "$REPORT_DATE" \
+		--argjson deliveryUsers "$delivery_users" \
+		--argjson feedbackUsers "$feedback_users" \
+		--argjson usefulCount "$useful_count" \
+		--argjson noiseCount "$noise_count" \
+		--argjson anxiousCount "$anxious_count" \
+		--argjson usefulRatePct "$useful_rate_pct" \
+		--argjson noiseRatePct "$noise_rate_pct" \
+		--argjson premiumIntentUsers "$premium_intent_users" \
+		--argjson premiumIntentPct "$premium_intent_pct" \
+		--argjson d1CohortSize "$d1_cohort_size" \
+		--argjson d1RetainedUsers "$d1_retained_users" \
+		--argjson d1RetentionPct "$d1_retention_pct" \
+		--argjson d7CohortSize "$d7_cohort_size" \
+		--argjson d7RetainedUsers "$d7_retained_users" \
+		--argjson d7RetentionPct "$d7_retention_pct" \
+		'{
+			reportDate: $reportDate,
+			deliveryUsers: $deliveryUsers,
+			feedbackUsers: $feedbackUsers,
+			usefulCount: $usefulCount,
+			noiseCount: $noiseCount,
+			anxiousCount: $anxiousCount,
+			usefulRatePct: $usefulRatePct,
+			noiseRatePct: $noiseRatePct,
+			premiumIntentUsers: $premiumIntentUsers,
+			premiumIntentPct: $premiumIntentPct,
+			d1CohortSize: $d1CohortSize,
+			d1RetainedUsers: $d1RetainedUsers,
+			d1RetentionPct: $d1RetentionPct,
+			d7CohortSize: $d7CohortSize,
+			d7RetainedUsers: $d7RetainedUsers,
+			d7RetentionPct: $d7RetentionPct
+		}')"
 else
-	REPORT_JSON="$(curl --fail --show-error --silent \
-		--connect-timeout "$CURL_MAX_TIME_SECONDS" \
-		--max-time "$CURL_MAX_TIME_SECONDS" \
-		--retry "$CURL_RETRY_COUNT" \
-		--retry-delay "$CURL_RETRY_DELAY_SECONDS" \
-		--retry-all-errors \
-		"$API_BASE_URL/api/analytics/product-report/daily?date=$REPORT_DATE")"
+	REPORT_JSON="$(curl_json "$API_BASE_URL/api/analytics/product-report/daily?date=$REPORT_DATE")"
 fi
 
 if ! jq -e . >/dev/null 2>&1 <<<"$REPORT_JSON"; then

@@ -247,8 +247,11 @@ public class AppMetrics {
 		final int usefulCount,
 		final int noiseCount,
 		final int anxiousCount,
+		final int premiumIntentUsers,
 		final int d1CohortSize,
-		final int d7CohortSize
+		final int d1RetainedUsers,
+		final int d7CohortSize,
+		final int d7RetainedUsers
 	) {
 		productReportSnapshotGaugeValues.update(
 			d1RetentionPct,
@@ -262,8 +265,11 @@ public class AppMetrics {
 			usefulCount,
 			noiseCount,
 			anxiousCount,
+			premiumIntentUsers,
 			d1CohortSize,
-			d7CohortSize
+			d1RetainedUsers,
+			d7CohortSize,
+			d7RetainedUsers
 		);
 	}
 
@@ -301,11 +307,20 @@ public class AppMetrics {
 		Gauge.builder("press.product.report.anxious.count", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::anxiousCount)
 			.description("Latest anxious feedback count from daily product report")
 			.register(meterRegistry);
+		Gauge.builder("press.product.report.premium.intent.users", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::premiumIntentUsers)
+			.description("Latest premium intent users count from daily product report")
+			.register(meterRegistry);
 		Gauge.builder("press.product.report.d1.cohort.size", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d1CohortSize)
 			.description("Latest D1 cohort size from daily product report")
 			.register(meterRegistry);
+		Gauge.builder("press.product.report.d1.retained.users", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d1RetainedUsers)
+			.description("Latest D1 retained users count from daily product report")
+			.register(meterRegistry);
 		Gauge.builder("press.product.report.d7.cohort.size", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d7CohortSize)
 			.description("Latest D7 cohort size from daily product report")
+			.register(meterRegistry);
+		Gauge.builder("press.product.report.d7.retained.users", productReportSnapshotGaugeValues, ProductReportSnapshotGaugeValues::d7RetainedUsers)
+			.description("Latest D7 retained users count from daily product report")
 			.register(meterRegistry);
 	}
 
@@ -337,8 +352,11 @@ public class AppMetrics {
 		private volatile double usefulCount;
 		private volatile double noiseCount;
 		private volatile double anxiousCount;
+		private volatile double premiumIntentUsers;
 		private volatile double d1CohortSize;
+		private volatile double d1RetainedUsers;
 		private volatile double d7CohortSize;
+		private volatile double d7RetainedUsers;
 
 		private void update(
 			final double d1RetentionPct,
@@ -352,8 +370,11 @@ public class AppMetrics {
 			final int usefulCount,
 			final int noiseCount,
 			final int anxiousCount,
+			final int premiumIntentUsers,
 			final int d1CohortSize,
-			final int d7CohortSize
+			final int d1RetainedUsers,
+			final int d7CohortSize,
+			final int d7RetainedUsers
 		) {
 			this.d1RetentionPct = percentOrZero(d1RetentionPct);
 			this.d7RetentionPct = percentOrZero(d7RetentionPct);
@@ -366,8 +387,11 @@ public class AppMetrics {
 			this.usefulCount = nonNegativeOrZero(usefulCount);
 			this.noiseCount = nonNegativeOrZero(noiseCount);
 			this.anxiousCount = nonNegativeOrZero(anxiousCount);
+			this.premiumIntentUsers = nonNegativeOrZero(premiumIntentUsers);
 			this.d1CohortSize = nonNegativeOrZero(d1CohortSize);
+			this.d1RetainedUsers = nonNegativeOrZero(d1RetainedUsers);
 			this.d7CohortSize = nonNegativeOrZero(d7CohortSize);
+			this.d7RetainedUsers = nonNegativeOrZero(d7RetainedUsers);
 		}
 
 		private double d1RetentionPct() {
@@ -414,12 +438,24 @@ public class AppMetrics {
 			return anxiousCount;
 		}
 
+		private double premiumIntentUsers() {
+			return premiumIntentUsers;
+		}
+
 		private double d1CohortSize() {
 			return d1CohortSize;
 		}
 
+		private double d1RetainedUsers() {
+			return d1RetainedUsers;
+		}
+
 		private double d7CohortSize() {
 			return d7CohortSize;
+		}
+
+		private double d7RetainedUsers() {
+			return d7RetainedUsers;
 		}
 
 		private double percentOrZero(final double value) {

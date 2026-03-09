@@ -77,8 +77,11 @@ public class ScheduledProductReportTask {
 			report.usefulCount(),
 			report.noiseCount(),
 			report.anxiousCount(),
+			report.premiumIntentUsers(),
 			report.d1CohortSize(),
-			report.d7CohortSize()
+			report.d1RetainedUsers(),
+			report.d7CohortSize(),
+			report.d7RetainedUsers()
 		);
 	}
 

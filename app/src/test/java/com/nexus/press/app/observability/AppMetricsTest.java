@@ -24,8 +24,11 @@ class AppMetricsTest {
 			41,
 			12,
 			9,
+			14,
 			67,
-			35
+			26,
+			35,
+			12
 		);
 
 		assertEquals(39.5, meterRegistry.get("press.product.report.d1.retention.pct").gauge().value(), 0.0001);
@@ -39,8 +42,11 @@ class AppMetricsTest {
 		assertEquals(41.0, meterRegistry.get("press.product.report.useful.count").gauge().value(), 0.0001);
 		assertEquals(12.0, meterRegistry.get("press.product.report.noise.count").gauge().value(), 0.0001);
 		assertEquals(9.0, meterRegistry.get("press.product.report.anxious.count").gauge().value(), 0.0001);
+		assertEquals(14.0, meterRegistry.get("press.product.report.premium.intent.users").gauge().value(), 0.0001);
 		assertEquals(67.0, meterRegistry.get("press.product.report.d1.cohort.size").gauge().value(), 0.0001);
+		assertEquals(26.0, meterRegistry.get("press.product.report.d1.retained.users").gauge().value(), 0.0001);
 		assertEquals(35.0, meterRegistry.get("press.product.report.d7.cohort.size").gauge().value(), 0.0001);
+		assertEquals(12.0, meterRegistry.get("press.product.report.d7.retained.users").gauge().value(), 0.0001);
 	}
 
 	@Test
