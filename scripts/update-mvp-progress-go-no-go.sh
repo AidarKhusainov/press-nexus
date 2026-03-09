@@ -226,10 +226,6 @@ noise_count="$(number_or_zero '.noiseCount')"
 anxious_count="$(number_or_zero '.anxiousCount')"
 quality_feedback_base="$((useful_count + noise_count + anxious_count))"
 
-premium_intent_pct="$(number_or_zero '.premiumIntentPct')"
-premium_intent_users="$(number_or_zero '.premiumIntentUsers')"
-delivery_users="$(number_or_zero '.deliveryUsers')"
-
 if (( d7_cohort_size > 0 )); then
 	d7_current="$(format_pct "$d7_retention_pct")% (${d7_retained_users}/${d7_cohort_size}, ${report_display_date})"
 	if is_ge "$d7_retention_pct" "35"; then
@@ -262,25 +258,12 @@ else
 	noise_status="TODO"
 fi
 
-if (( delivery_users > 0 )); then
-	premium_current="$(format_pct "$premium_intent_pct")% (${premium_intent_users}/${delivery_users}, ${report_display_date})"
-	if is_ge "$premium_intent_pct" "10"; then
-		premium_status="DONE"
-	else
-		premium_status="TODO"
-	fi
-else
-	premium_current="no data (delivered=0, ${report_display_date})"
-	premium_status="TODO"
-fi
-
 today="${TODAY_OVERRIDE:-$(date +%F)}"
 tmp_file="$(mktemp)"
 last_updated_replaced="0"
 d7_replaced="0"
 useful_replaced="0"
 noise_replaced="0"
-premium_replaced="0"
 
 while IFS= read -r line; do
 	case "$line" in
@@ -300,17 +283,13 @@ while IFS= read -r line; do
 			printf '| Noise | `<= 20%%` | %s | %s |\n' "$noise_current" "$noise_status" >>"$tmp_file"
 			noise_replaced="1"
 			;;
-		"| Premium intent |"*)
-			printf '| Premium intent | `>= 10%%` | %s | %s |\n' "$premium_current" "$premium_status" >>"$tmp_file"
-			premium_replaced="1"
-			;;
 		*)
 			printf '%s\n' "$line" >>"$tmp_file"
 			;;
 	esac
 done <"$TARGET_FILE"
 
-if [[ "$last_updated_replaced" != "1" || "$d7_replaced" != "1" || "$useful_replaced" != "1" || "$noise_replaced" != "1" || "$premium_replaced" != "1" ]]; then
+if [[ "$last_updated_replaced" != "1" || "$d7_replaced" != "1" || "$useful_replaced" != "1" || "$noise_replaced" != "1" ]]; then
 	rm -f "$tmp_file"
 	echo "Target file does not contain the expected MVP progress markers." >&2
 	exit 1

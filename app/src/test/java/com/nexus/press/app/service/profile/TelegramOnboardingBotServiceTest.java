@@ -14,15 +14,12 @@ import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
 import com.nexus.press.app.service.feedback.FeedbackEventType;
-import com.nexus.press.app.service.premium.PremiumIntentEventService;
-import com.nexus.press.app.service.premium.PremiumSegmentResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -40,8 +37,6 @@ class TelegramOnboardingBotServiceTest {
 	@Mock
 	private FeedbackEventService feedbackEventService;
 	@Mock
-	private PremiumIntentEventService premiumIntentEventService;
-	@Mock
 	private AppMetrics appMetrics;
 
 	private TelegramOnboardingBotService service;
@@ -56,8 +51,6 @@ class TelegramOnboardingBotServiceTest {
 			telegramDeliveryService,
 			props,
 			feedbackEventService,
-			premiumIntentEventService,
-			new PremiumSegmentResolver(),
 			appMetrics
 		);
 	}
@@ -233,7 +226,7 @@ class TelegramOnboardingBotServiceTest {
 	}
 
 	@Test
-	void premiumCommandSendsFreeMessageWhenPremiumDisabled() {
+	void premiumCommandExplainsThatBetaIsFree() {
 		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), isNull())).thenReturn(Mono.empty());
 
 		service.handleUpdate(updateWithText("/premium")).block();
@@ -248,28 +241,13 @@ class TelegramOnboardingBotServiceTest {
 	}
 
 	@Test
-	void premiumCallbackDoesNotStoreIntentWhenPremiumDisabled() {
+	void premiumCallbackAnswersThatBetaIsFreeAndDoesNotStoreIntent() {
 		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
 
 		service.handleUpdate(callbackUpdate("pi|299|economy")).block();
 
-		verify(premiumIntentEventService, never()).recordTelegramIntent(any(), anyInt(), any(), any(), any());
 		verify(userProfileService, never()).registerTelegramUser(any());
 		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("бесплатно")));
-	}
-
-	@Test
-	void premiumCallbackStoresIntentAndAnswersCallbackQueryWhenPremiumEnabled() {
-		props.setPremiumEnabled(true);
-		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
-		when(premiumIntentEventService.recordTelegramIntent(eq("12345"), eq(299), eq("economy"), eq("inline_button"), any()))
-			.thenReturn(Mono.empty());
-		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
-
-		service.handleUpdate(callbackUpdate("pi|299|economy")).block();
-
-		verify(premiumIntentEventService).recordTelegramIntent(eq("12345"), eq(299), eq("economy"), eq("inline_button"), any());
-		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("299")));
 	}
 
 	private Map<String, Object> updateWithText(final String text) {

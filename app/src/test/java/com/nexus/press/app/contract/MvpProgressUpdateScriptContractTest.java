@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -83,7 +84,7 @@ class MvpProgressUpdateScriptContractTest {
 		assertTrue(updated.contains("| D7 retention | `>= 35%` | 40.0% (4/10, 2026-03-08) | DONE |"));
 		assertTrue(updated.contains("| Useful | `>= 70%` | 75.0% (30/40, 2026-03-08) | DONE |"));
 		assertTrue(updated.contains("| Noise | `<= 20%` | 20.0% (8/40, 2026-03-08) | DONE |"));
-		assertTrue(updated.contains("| Premium intent | `>= 10%` | 11.3% (9/80, 2026-03-08) | DONE |"));
+		assertFalse(updated.contains("| Premium intent |"));
 	}
 
 	@Test
@@ -168,7 +169,7 @@ class MvpProgressUpdateScriptContractTest {
 		assertTrue(updated.contains("| D7 retention | `>= 35%` | 40.0% (4/10, 2026-03-08) | DONE |"));
 		assertTrue(updated.contains("| Useful | `>= 70%` | 75.0% (30/40, 2026-03-08) | DONE |"));
 		assertTrue(updated.contains("| Noise | `<= 20%` | 20.0% (8/40, 2026-03-08) | DONE |"));
-		assertTrue(updated.contains("| Premium intent | `>= 10%` | 11.3% (9/80, 2026-03-08) | DONE |"));
+		assertFalse(updated.contains("| Premium intent |"));
 	}
 
 	private boolean commandAvailable(final String command) throws Exception {

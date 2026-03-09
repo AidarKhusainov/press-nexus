@@ -15,8 +15,6 @@ import com.nexus.press.app.service.feedback.FeedbackEventService;
 import com.nexus.press.app.service.feedback.FeedbackEventType;
 import com.nexus.press.app.service.feedback.TelegramFeedbackCallbackData;
 import com.nexus.press.app.service.premium.PremiumIntentCallbackData;
-import com.nexus.press.app.service.premium.PremiumIntentEventService;
-import com.nexus.press.app.service.premium.PremiumSegmentResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,8 +29,6 @@ public class TelegramOnboardingBotService {
 	private final TelegramDeliveryService telegramDeliveryService;
 	private final TelegramDeliveryProperties telegramDeliveryProperties;
 	private final FeedbackEventService feedbackEventService;
-	private final PremiumIntentEventService premiumIntentEventService;
-	private final PremiumSegmentResolver premiumSegmentResolver;
 	private final AppMetrics appMetrics;
 
 	public Mono<Void> handleUpdate(final Map<String, Object> update) {
@@ -79,10 +75,7 @@ public class TelegramOnboardingBotService {
 
 		final var premiumIntent = PremiumIntentCallbackData.parse(callback.data());
 		if (premiumIntent.isPresent()) {
-			if (!telegramDeliveryProperties.isPremiumEnabled()) {
-				return answerCallback(callback.callbackId(), premiumDisabledCallbackText());
-			}
-			return handlePremiumIntentCallback(callback, premiumIntent.get());
+			return answerCallback(callback.callbackId(), premiumFreeBetaCallbackText());
 		}
 
 		final var feedback = TelegramFeedbackCallbackData.parse(callback.data());
@@ -218,38 +211,6 @@ public class TelegramOnboardingBotService {
 		return Mono.empty();
 	}
 
-	private Mono<Void> handlePremiumIntentCallback(
-		final CallbackContext callback,
-		final PremiumIntentCallbackData premiumIntent
-	) {
-		final var userContext = new TelegramUserContext(
-			callback.chatId(),
-			callback.userId(),
-			callback.username(),
-			callback.firstName(),
-			callback.language()
-		);
-
-		return userProfileService.registerTelegramUser(userContext)
-			.flatMap(profile -> {
-				final String segment = StringUtils.hasText(premiumIntent.segment())
-					? premiumIntent.segment()
-					: resolvePremiumSegment(profile.topics());
-				return premiumIntentEventService.recordTelegramIntent(
-					callback.chatId(),
-					premiumIntent.priceRub(),
-					segment,
-					"inline_button",
-					buildPremiumPayload(callback, premiumIntent, profile, segment)
-				);
-			})
-			.then(answerCallback(callback.callbackId(), premiumAckText(premiumIntent.priceRub())))
-			.onErrorResume(ex -> {
-				log.warn("Не удалось обработать premium callback data={}", callback.data(), ex);
-				return answerCallback(callback.callbackId(), "Не сохранил Premium intent, попробуй еще раз.");
-			});
-	}
-
 	private Mono<Void> handleStart(final MessageContext message) {
 		final var userContext = new TelegramUserContext(
 			message.chatId(),
@@ -307,26 +268,7 @@ public class TelegramOnboardingBotService {
 	}
 
 	private Mono<Void> handlePremiumCommand(final MessageContext message) {
-		if (!telegramDeliveryProperties.isPremiumEnabled()) {
-			return sendMessage(message.chatId(), premiumDisabledMessageText());
-		}
-
-		final var userContext = new TelegramUserContext(
-			message.chatId(),
-			message.userId(),
-			message.username(),
-			message.firstName(),
-			message.language());
-
-		return userProfileService.registerTelegramUser(userContext)
-			.flatMap(profile -> {
-				final String segment = resolvePremiumSegment(profile.topics());
-				return sendMessage(
-					message.chatId(),
-					buildPremiumOfferMessage(profile, segment),
-					premiumOfferKeyboard(segment)
-				);
-				});
+		return sendMessage(message.chatId(), premiumFreeBetaMessageText());
 	}
 
 	private Mono<Void> handleUnsubscribeCommand(final MessageContext message, final String commandText) {
@@ -364,7 +306,7 @@ public class TelegramOnboardingBotService {
 			/frequency daily|2d|3d - выбрать частоту
 			/profile - посмотреть текущие настройки
 			/unsubscribe или /stop - отключить рассылку
-			/premium - статус beta (сейчас всё бесплатно)
+			/premium - весь beta-функционал сейчас доступен бесплатно
 			""");
 	}
 
@@ -449,53 +391,16 @@ public class TelegramOnboardingBotService {
 			""";
 	}
 
-	private Map<String, Object> buildPremiumPayload(
-		final CallbackContext callback,
-		final PremiumIntentCallbackData premiumIntent,
-		final UserProfile profile,
-		final String segment
-	) {
-		final var payload = new LinkedHashMap<String, Object>();
-		payload.put("telegram_callback_id", callback.callbackId());
-		payload.put("telegram_message_id", callback.messageId());
-		payload.put("telegram_user_id", callback.userId());
-		payload.put("username", callback.username());
-		payload.put("callback_data", callback.data());
-		payload.put("price_rub", premiumIntent.priceRub());
-		payload.put("segment", segment);
-		payload.put("topics", profile.topics());
-		return payload;
-	}
-
-	private Map<String, Object> premiumOfferKeyboard(final String segment) {
-		return Map.of(
-			"inline_keyboard", List.of(
-				List.of(
-					Map.of("text", "199 ₽/мес", "callback_data", PremiumIntentCallbackData.build(199, segment)),
-					Map.of("text", "299 ₽/мес", "callback_data", PremiumIntentCallbackData.build(299, segment)),
-					Map.of("text", "399 ₽/мес", "callback_data", PremiumIntentCallbackData.build(399, segment))
-				)
-			)
-		);
-	}
-
-	private String premiumAckText(final int priceRub) {
-		return "Зафиксировал интерес к Premium за " + priceRub + " ₽/мес. Спасибо!";
-	}
-
-	private String premiumDisabledMessageText() {
+	private String premiumFreeBetaMessageText() {
 		return """
-			Сейчас весь продукт бесплатный на этапе обкатки.
-			Платную модель включим позже, когда стабилизируем качество под реальных пользователей.
+			Premium пока не продаем.
+			Сейчас весь функционал доступен бесплатно в beta-режиме, чтобы спокойно докрутить качество на реальном использовании.
+			Ничего дополнительно оплачивать или включать не нужно.
 			""";
 	}
 
-	private String premiumDisabledCallbackText() {
-		return "Сейчас всё бесплатно в beta-режиме.";
-	}
-
-	private String resolvePremiumSegment(final List<String> topics) {
-		return premiumSegmentResolver.resolve(topics);
+	private String premiumFreeBetaCallbackText() {
+		return "Premium пока не продаем: в beta всё уже доступно бесплатно.";
 	}
 
 	private String commandArgument(final String text) {
@@ -705,32 +610,6 @@ public class TelegramOnboardingBotService {
 			profile.timezone(),
 			profile.onboardedAt() == null ? "не завершен" : "завершен"
 		);
-	}
-
-	private String buildPremiumOfferMessage(final UserProfile profile, final String segment) {
-		final String topics = profile.topics().isEmpty() ? "пока не выбраны" : String.join(", ", profile.topics());
-		final String segmentBenefits = switch (segment) {
-			case "economy" -> "Сделаем акцент на рынке, деньгах и бизнес-рисках: меньше шума, больше практичного контекста.";
-			case "tech" -> "Сфокусируемся на технологиях и науке: что реально влияет на рынок и повседневную жизнь.";
-			case "news" -> "Упор на мировую/российскую повестку без драматизации: что важно знать и какие последствия дальше.";
-			case "lifestyle" -> "Больше сигналов по спорту и культуре, без лишнего инфошума.";
-			case "mixed" -> "Соберем сбалансированный Premium-дайджест по твоему набору тем, сохраняя только действительно важное.";
-			default -> "Соберем персональный Premium-дайджест и подстроим глубину разбора под твои темы.";
-		};
-
-		return """
-			Ранний Premium (тест)
-			Твои текущие темы: %s
-			
-			%s
-			
-			Что входит:
-			- полный daily brief с дополнительным контекстом;
-			- персонализация по темам;
-			- weekly deep-dive и архив лучших разборов.
-			
-			Если тебе ок такой формат, выбери цену, которую готов(а) платить в месяц:
-			""".formatted(topics, segmentBenefits);
 	}
 
 	@SuppressWarnings("unchecked")

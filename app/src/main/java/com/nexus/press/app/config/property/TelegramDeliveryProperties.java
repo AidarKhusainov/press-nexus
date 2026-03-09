@@ -19,5 +19,4 @@ public class TelegramDeliveryProperties {
 	private Duration lookback = Duration.ofHours(24);
 	private Integer maxItems = 7;
 	private String language = "ru";
-	private boolean premiumEnabled = false;
 }
