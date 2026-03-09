@@ -17,7 +17,7 @@ Last updated: 2026-03-09
 |---|---|---|
 | A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization are implemented; near-duplicate suppression now combines URL/content-hash, representative-only summarization, and brief-time similarity/text fallback, but duplicate reduction criterion is not confirmed by report |
 | B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; `DailyBriefService` now re-ranks candidates with source diversity and a more stable must/good balance, usefulness KPI validation is pending beta data |
-| C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented, KPI validation is pending |
+| C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented; closed-beta launch runbook/helper script are added, KPI validation is pending |
 | D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
 | E. Premium Test | DONE | Paid premium is postponed for beta: `/premium` now explicitly says that all current functionality is available for free; old premium callbacks are informational only |
 
@@ -60,7 +60,7 @@ Last updated: 2026-03-09
 | 8 | Telegram delivery job | DONE |
 | 9 | Feedback events | DONE |
 | 10 | Analytics + daily quality-report | DONE |
-| 11 | Closed beta for 20 users | TODO |
+| 11 | Closed beta for 20 users | IN_PROGRESS |
 | 12 | Noise/ranking adjustments | DONE |
 | 13 | Expand to 50–100 users | TODO |
 | 14 | Premium intent test + go/no-go | DONE |
@@ -82,6 +82,7 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 ## Next Tasks (priority)
 
 1. Start closed beta for 20 users and collect first retention/quality feedback in `/api/analytics/product-report/daily`.
+   Launch tooling is ready via `docs/runbooks/closed-beta-launch.md` and `./scripts/closed-beta-check.sh`; remaining work is inviting real users and observing non-zero traffic.
 2. Adjust noise/ranking quality based on first beta feedback and manual review of digests.
 3. Expand beta to 50-100 users after the first quality fixes land.
 4. Defer daily Go/No-Go metric refresh via `./scripts/update-mvp-progress-go-no-go.sh` until beta traffic is non-zero.
