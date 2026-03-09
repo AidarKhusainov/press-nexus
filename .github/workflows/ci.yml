@@ -133,7 +133,7 @@ jobs:
 
       - name: Scan SBOM with Grype
         id: grype
-        uses: anchore/scan-action@v6
+        uses: anchore/scan-action@v7
         with:
           sbom: target/bom.json
           fail-build: true
