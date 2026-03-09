@@ -108,13 +108,6 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.ref }}
 
-      - name: Install SSH key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.PROD_SSH_KEY }}
-          known_hosts: ${{ secrets.PROD_SSH_HOSTKEY }}
-          if_key_exists: replace
-
       - name: Create deploy bundle
         env:
           APP_IMAGE: ${{ needs.build-and-push.outputs.image }}
@@ -148,24 +141,47 @@ jobs:
           APP_PORT=${APP_PORT:-8080}
           JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0}
           EOF
+          cp deploy/docker-compose.prod.yml .deploy/docker-compose.prod.yml
+          cp scripts/deploy-prod-stack.sh .deploy/deploy-prod-stack.sh
+          tar -C .deploy -cf .deploy/deploy-bundle.tar .env docker-compose.prod.yml deploy-prod-stack.sh
 
       - name: Ensure target directory exists
-        run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "${PROD_PORT}" "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" "mkdir -p '${PROD_APP_DIR}'"
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT }}
+          fingerprint: ${{ secrets.PROD_SSH_FINGERPRINT }}
+          script: mkdir -p '${{ env.PROD_APP_DIR }}'
 
-      - name: Upload deployment files
-        run: |
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" deploy/docker-compose.prod.yml \
-            "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/docker-compose.prod.yml"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" scripts/deploy-prod-stack.sh \
-            "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/deploy-prod-stack.sh"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" .deploy/.env \
-            "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/.env"
+      - name: Upload deployment bundle
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT }}
+          fingerprint: ${{ secrets.PROD_SSH_FINGERPRINT }}
+          source: .deploy/deploy-bundle.tar
+          target: ${{ env.PROD_APP_DIR }}
+          overwrite: true
 
       - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
         env:
           GHCR_USERNAME: ${{ secrets.PROD_GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.PROD_GHCR_TOKEN }}
-        run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "${PROD_PORT}" "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" \
-            "chmod 600 '${PROD_APP_DIR}/.env' && chmod +x '${PROD_APP_DIR}/deploy-prod-stack.sh' && GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' APP_DIR='${PROD_APP_DIR}' '${PROD_APP_DIR}/deploy-prod-stack.sh'"
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT }}
+          fingerprint: ${{ secrets.PROD_SSH_FINGERPRINT }}
+          envs: GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            tar -C '${{ env.PROD_APP_DIR }}' -xf '${{ env.PROD_APP_DIR }}/deploy-bundle.tar'
+            rm -f '${{ env.PROD_APP_DIR }}/deploy-bundle.tar'
+            chmod 600 '${{ env.PROD_APP_DIR }}/.env'
+            chmod +x '${{ env.PROD_APP_DIR }}/deploy-prod-stack.sh'
+            APP_DIR='${{ env.PROD_APP_DIR }}' GHCR_USERNAME="${GHCR_USERNAME}" GHCR_TOKEN="${GHCR_TOKEN}" '${{ env.PROD_APP_DIR }}/deploy-prod-stack.sh'
