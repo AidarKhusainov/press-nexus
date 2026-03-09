@@ -370,6 +370,7 @@ public class DailyBriefService {
 			assessment.candidate(),
 			assessment.title(),
 			assessment.parts(),
+			language,
 			selectedIds,
 			nearDuplicateIds,
 			selectedFingerprints
@@ -407,7 +408,7 @@ public class DailyBriefService {
 		if (assessment.candidate().id() != null && !assessment.candidate().id().isBlank()) {
 			selectedIds.add(assessment.candidate().id());
 		}
-		selectedFingerprints.add(candidateFingerprint(assessment.title(), assessment.parts()));
+		selectedFingerprints.add(candidateFingerprint(assessment.title(), assessment.parts(), language));
 		if (hasMedia(assessment.media())) {
 			mediaUsage.merge(assessment.media(), 1, Integer::sum);
 		}
@@ -446,6 +447,7 @@ public class DailyBriefService {
 		final Candidate candidate,
 		final String title,
 		final SummaryParts parts,
+		final String language,
 		final Set<String> selectedIds,
 		final Map<String, Set<String>> nearDuplicateIds,
 		final List<CandidateFingerprint> selectedFingerprints
@@ -460,7 +462,7 @@ public class DailyBriefService {
 			}
 		}
 
-		final CandidateFingerprint candidateFingerprint = candidateFingerprint(title, parts);
+		final CandidateFingerprint candidateFingerprint = candidateFingerprint(title, parts, language);
 		for (final CandidateFingerprint selectedFingerprint : selectedFingerprints) {
 			if (candidateFingerprint.signature().equals(selectedFingerprint.signature())) {
 				return true;
@@ -675,9 +677,23 @@ public class DailyBriefService {
 		return value.substring(0, Math.max(0, maxLength - 1)).strip() + "…";
 	}
 
-	private CandidateFingerprint candidateFingerprint(final String title, final SummaryParts parts) {
-		final String combined = dedupKey(title + " " + parts.whatHappened() + " " + parts.whyImportant());
+	private CandidateFingerprint candidateFingerprint(final String title, final SummaryParts parts, final String language) {
+		final String combined = dedupKey(title + " " + parts.whatHappened() + " " + contextualFingerprintText(parts, language));
 		return new CandidateFingerprint(combined, tokens(combined));
+	}
+
+	private String contextualFingerprintText(final SummaryParts parts, final String language) {
+		final List<String> fragments = new ArrayList<>();
+		final String safeLanguage = normalizeLanguage(language);
+		final String whyImportant = clean(parts.whyImportant());
+		final String whatNext = clean(parts.whatNext());
+		if (!whyImportant.equals(clean(defaultWhy(safeLanguage)))) {
+			fragments.add(whyImportant);
+		}
+		if (!whatNext.equals(clean(defaultNext(safeLanguage)))) {
+			fragments.add(whatNext);
+		}
+		return String.join(" ", fragments);
 	}
 
 	private Set<String> tokens(final String normalized) {

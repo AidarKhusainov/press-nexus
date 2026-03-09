@@ -1,0 +1,115 @@
+[
+  {
+    "name": "balanced_digest_ru",
+    "language": "ru",
+    "maxItems": 4,
+    "generatedAt": "2026-03-09T10:15:00Z",
+    "candidates": [
+      {
+        "id": "n1",
+        "title": "Банк России сохранил ключевую ставку на уровне 18%",
+        "url": "https://example.com/rate-1",
+        "media": "RBK",
+        "eventAt": "2026-03-09T10:00:00Z",
+        "summary": "Банк России сохранил ключевую ставку на уровне 18 процентов. Решение влияет на стоимость кредитов и инфляцию. Следующее заседание пройдет в апреле."
+      },
+      {
+        "id": "n2",
+        "title": "ЦБ оставил ставку 18% без изменений",
+        "url": "https://example.com/rate-2",
+        "media": "LOCAL",
+        "eventAt": "2026-03-09T09:55:00Z",
+        "summary": "Центробанк сохранил ставку на уровне 18 процентов. Это влияет на стоимость кредитов и динамику инфляции. Следующие сигналы рынок ждет после заседания."
+      },
+      {
+        "id": "n3",
+        "title": "В Петербурге запустили пилот по электронным пропускам в музеи",
+        "url": "https://example.com/museums",
+        "media": "FONTANKA",
+        "eventAt": "2026-03-09T02:00:00Z",
+        "summary": "В Петербурге запустили пилот по электронным пропускам в музеи."
+      },
+      {
+        "id": "n4",
+        "title": "Музеи продлили вечерние часы работы на весенние каникулы",
+        "url": "https://example.com/afisha",
+        "media": "AFISHA",
+        "eventAt": "2026-03-09T00:00:00Z",
+        "summary": "Музеи продлили вечерние часы работы на весенние каникулы."
+      },
+      {
+        "id": "n5",
+        "title": "Минфин представил проект федерального бюджета на 2027 год",
+        "url": "https://example.com/budget",
+        "media": "VEDOMOSTI",
+        "eventAt": "2026-03-09T09:50:00Z",
+        "summary": "Минфин представил проект федерального бюджета на 2027 год. Документ задает рамку для налоговой и расходной политики. Обсуждение параметров продолжится в правительстве."
+      },
+      {
+        "id": "n6",
+        "title": "ШОК!!! Вы не поверите, что произошло на рынке!!!",
+        "url": "https://example.com/clickbait",
+        "media": "BLOG",
+        "eventAt": "2026-03-09T08:00:00Z",
+        "summary": "Это взорвало интернет и никто не ожидал такого поворота."
+      }
+    ],
+    "nearDuplicateIds": {
+      "n1": ["n2"],
+      "n2": ["n1"]
+    },
+    "expectedSelectedIds": ["n1", "n5", "n3", "n4"],
+    "expectedExcludedIds": ["n2", "n6"],
+    "expectedMustKnowCount": 2,
+    "expectedGoodToKnowCount": 2,
+    "expectedDistinctMediaCount": 4,
+    "expectedMessageContains": [
+      "Press Nexus Lite",
+      "1. Банк России сохранил ключевую ставку на уровне 18%",
+      "2. Минфин представил проект федерального бюджета на 2027 год",
+      "Формат: must know / good to know, нейтрально и без кликбейта."
+    ],
+    "expectedMessageNotContains": [
+      "ШОК!!!",
+      "взорвало интернет"
+    ]
+  },
+  {
+    "name": "fallback_summary_defaults_ru",
+    "language": "ru",
+    "maxItems": 2,
+    "generatedAt": "2026-03-09T10:15:00Z",
+    "candidates": [
+      {
+        "id": "n7",
+        "title": "В городе открыли новый маршрут речного трамвая",
+        "url": "https://example.com/river-tram",
+        "media": "CITY",
+        "eventAt": "2026-03-09T10:00:00Z",
+        "summary": ""
+      },
+      {
+        "id": "n8",
+        "title": "Регион подготовил новые площадки под технопарк",
+        "url": "https://example.com/technopark",
+        "media": "REGIONS",
+        "eventAt": "2026-03-09T09:00:00Z",
+        "summary": "Регион подготовил новые площадки под технопарк."
+      }
+    ],
+    "nearDuplicateIds": {},
+    "expectedSelectedIds": ["n7", "n8"],
+    "expectedExcludedIds": [],
+    "expectedMustKnowCount": 0,
+    "expectedGoodToKnowCount": 2,
+    "expectedDistinctMediaCount": 2,
+    "expectedMessageContains": [
+      "1. В городе открыли новый маршрут речного трамвая",
+      "Почему важно: Событие влияет на общую повестку и может затронуть повседневные решения.",
+      "Что дальше: Следим за подтверждениями, официальными заявлениями и дальнейшими последствиями."
+    ],
+    "expectedMessageNotContains": [
+      "время н/д"
+    ]
+  }
+]

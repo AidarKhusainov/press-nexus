@@ -90,8 +90,8 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 
 1. DONE (2026-03-09): tuned digest noise/ranking quality in `selectItems` and `scoreImportance`, added better source diversity and a more stable must/good balance in the brief.
    Main code area: `service/brief/DailyBriefService.java`.
-2. Add a fixture-based regression suite for digest quality: expand current `DailyBriefServiceTest` coverage to full digest fixtures for dedup, ranking, tone moderation, and 3-block summary formatting so quality changes are reproducible before beta traffic is large enough.
-   Main code areas: `service/brief/DailyBriefService.java`, `service/brief/BriefToneModerationService.java`, `app/src/test/java/**`.
+2. DONE (2026-03-09): added fixture-based regression coverage for digest quality with reusable scenarios covering dedup, ranking, tone moderation, and 3-block Telegram formatting.
+   Main code areas: `app/src/test/resources/fixtures/brief/daily-brief-quality-fixtures.json`, `app/src/test/java/com/nexus/press/app/service/brief/DailyBriefQualityFixtureTest.java`.
 
 ## How to Update Progress
 
