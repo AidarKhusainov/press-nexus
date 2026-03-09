@@ -23,7 +23,7 @@
 6) (Planned) Storage & Search: index into storage (ES/OpenSearch/PG+pgvector).
 
 ## Configuration and Environment
-- AI: `spring.ai.ollama.*` (base: `http://localhost:11434/`), models/options managed in `application.properties:1`.
+- AI transport/config: `http-client.clients.OLLAMA.*` and `http-client.clients.GEMINI.*` in `application.properties:1`; models selected in services.
 - HTTP clients: `http-client.clients.*` (base-url, timeouts, retries) — tuned per source.
 - Commands: build `./mvnw clean verify`, run `./mvnw -pl app spring-boot:run`, tests `./mvnw test`.
 

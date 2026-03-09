@@ -6,6 +6,18 @@ Initialize reproducible local environment for humans and AI-agents.
 
 ## One-command setup
 
+Set required DB password in environment:
+
+```bash
+export PRESS_DB_PASSWORD='<set-db-password>'
+```
+
+If monitoring stack is enabled, set Grafana admin password too:
+
+```bash
+export GRAFANA_ADMIN_PASSWORD='<set-grafana-password>'
+```
+
 ```bash
 ./scripts/init-local-env.sh
 ```
@@ -41,4 +53,3 @@ docker compose up -d ollama-cpu
 ```bash
 docker compose --profile monitoring up -d prometheus grafana loki promtail
 ```
-

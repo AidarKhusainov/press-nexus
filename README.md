@@ -28,6 +28,18 @@ Press Nexus aggregates news from open sources, normalizes and enriches content, 
 
 ## Quick Start
 
+Set required DB password via environment before starting local services:
+
+```bash
+export PRESS_DB_PASSWORD='<set-db-password>'
+```
+
+If you use monitoring stack, also set:
+
+```bash
+export GRAFANA_ADMIN_PASSWORD='<set-grafana-password>'
+```
+
 1. Check environment:
 ```bash
 ./scripts/use-jdk21.sh
@@ -71,7 +83,7 @@ docker compose --profile monitoring up -d prometheus grafana loki promtail
 - Actuator: `http://localhost:8080/actuator`
 - Prometheus metrics: `http://localhost:8080/actuator/prometheus`
 - Prometheus UI: `http://localhost:9090`
-- Grafana UI: `http://localhost:3000` (`admin/admin`)
+- Grafana UI: `http://localhost:3000` (`admin` / value from `GRAFANA_ADMIN_PASSWORD`)
 - Loki API: `http://localhost:3100`
 
 ## Engineering Policies

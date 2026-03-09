@@ -35,7 +35,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @EnabledIfSystemProperty(named = "db.tests", matches = "true")
 class NewsPipelineIntegrationTest {
 
-	private static final String TEST_DB_URL = "r2dbc:postgresql://pressnexus:pressnexus@localhost:5432/pressnexus_test";
+	private static final String TEST_DB_USER = System.getenv().getOrDefault("PRESS_TEST_DB_USER", "pressnexus");
+	private static final String TEST_DB_PASSWORD = System.getenv().getOrDefault("PRESS_TEST_DB_PASSWORD", "");
+	private static final String TEST_DB_URL =
+		"r2dbc:postgresql://%s:%s@localhost:5432/pressnexus_test".formatted(TEST_DB_USER, TEST_DB_PASSWORD);
 	private static final AppMetrics APP_METRICS = new AppMetrics(new SimpleMeterRegistry());
 
 	private DatabaseClient db;

@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$ROOT_DIR"
 
+: "${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD before running ./scripts/init-local-env.sh}"
+
 ./scripts/init-local-db.sh
 
 echo "Starting local AI backend..."
