@@ -15,7 +15,7 @@ Last updated: 2026-03-09
 
 | Epic | Status | Progress |
 |---|---|---|
-| A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization/dedup are implemented, but duplicate reduction criterion is not confirmed by report |
+| A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization are implemented; near-duplicate suppression now combines URL/content-hash, representative-only summarization, and brief-time similarity/text fallback, but duplicate reduction criterion is not confirmed by report |
 | B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; usefulness KPI validation is pending beta data |
 | C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented, KPI validation is pending |
 | D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
@@ -27,7 +27,7 @@ Last updated: 2026-03-09
 |---|---|---|---|
 | A | Source registry + periodic fetch | DONE | `service/news/platform/*`, `service/scheduler/ScheduledNewsFetchTask.java` |
 | A | Article normalization (title/text/source/time/category/url) | DONE | `service/news/NewsPopulateContentService.java`, `service/news/NewsPersistenceService.java` |
-| A | Dedup (URL + similarity) | IN_PROGRESS | URL + `content_hash` in DB, near-dup partially via similarity/cluster |
+| A | Dedup (URL + similarity) | DONE | URL + `content_hash` in DB, representative-only summarization via clustering, and brief-time near-duplicate suppression via similarity/text fallback in `service/brief/DailyBriefService.java` |
 | A | Criterion: -70% duplicates | CHECK | Separate baseline vs current report/metric required |
 | B | Event clustering | DONE | `service/news/NewsClusteringService.java`, `cluster*` tables |
 | B | must/good ranking | DONE | `service/brief/DailyBriefService.java` (`scoreImportance`) |
@@ -52,7 +52,7 @@ Last updated: 2026-03-09
 |---|---|---|
 | 1 | Data model + `sources/raw_articles/users` | IN_PROGRESS |
 | 2 | Stable fetch pipeline + scheduler | DONE |
-| 3 | Dedup + basic clustering | IN_PROGRESS |
+| 3 | Dedup + basic clustering | DONE |
 | 4 | Importance scoring | DONE |
 | 5 | Card format + digest template | DONE |
 | 6 | Emotional filter | DONE |
@@ -88,11 +88,9 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 
 ## Next Development Tasks
 
-1. Finish dedup to production-ready quality: use similarity/cluster signals earlier in the pipeline, suppress near-duplicates beyond URL/title matching, and add a reproducible validation for the `-70% duplicates` criterion.
-   Main code areas: `service/news/NewsSummarizationService.java`, `service/news/NewsClusteringService.java`, `service/brief/DailyBriefService.java`.
-2. Tune digest noise/ranking quality: improve `selectItems` and `scoreImportance`, add stronger suppression of similar cards, better source diversity, and a more stable must/good balance in the brief.
+1. Tune digest noise/ranking quality: improve `selectItems` and `scoreImportance`, add better source diversity, and a more stable must/good balance in the brief.
    Main code area: `service/brief/DailyBriefService.java`.
-3. Add a fixture-based regression suite for digest quality: cover dedup, ranking, tone moderation, and 3-block summary formatting so quality changes are reproducible before beta traffic is large enough.
+2. Add a fixture-based regression suite for digest quality: cover dedup, ranking, tone moderation, and 3-block summary formatting so quality changes are reproducible before beta traffic is large enough.
    Main code areas: `service/brief/DailyBriefService.java`, `service/brief/BriefToneModerationService.java`, `app/src/test/java/**`.
 
 ## How to Update Progress

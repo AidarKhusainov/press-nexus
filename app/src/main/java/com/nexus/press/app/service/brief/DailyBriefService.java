@@ -6,16 +6,20 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.brief.model.BriefImportance;
 import com.nexus.press.app.service.brief.model.DailyBrief;
 import com.nexus.press.app.service.brief.model.DailyBriefItem;
+import com.nexus.press.app.service.news.NewsSimilarityStore;
+import com.nexus.press.app.service.news.ReactiveNewsSimilarityStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
@@ -48,6 +52,9 @@ public class DailyBriefService {
 
 	private static final Pattern SENTENCE_SPLIT = Pattern.compile("(?<=[.!?])\\s+");
 	private static final Pattern MULTI_SPACE = Pattern.compile("\\s+");
+	private static final double BRIEF_NEAR_DUPLICATE_MIN_SCORE = 0.82d;
+	private static final int MIN_NEAR_DUPLICATE_TOKEN_OVERLAP = 5;
+	private static final double MIN_NEAR_DUPLICATE_TOKEN_RATIO = 0.6d;
 	private static final Set<String> MAJOR_MEDIA = Set.of(
 		"BBC", "CNN", "REUTERS", "NYTIMES", "DW",
 		"RIA", "TASS", "RBK", "KOMMERSANT", "VEDOMOSTI"
@@ -73,6 +80,7 @@ public class DailyBriefService {
 	);
 
 	private final DatabaseClient db;
+	private final ReactiveNewsSimilarityStore similarityStore;
 	private final BriefToneModerationService briefToneModerationService;
 	private final AppMetrics appMetrics;
 
@@ -92,20 +100,21 @@ public class DailyBriefService {
 			: lookback;
 		final int safeLimit = Math.max(1, Math.min(maxItems, 20));
 		final Set<String> normalizedTopics = normalizeTopics(topics);
-		final int queryLimit = Math.max(safeLimit * 4, safeLimit);
+		final int queryLimit = Math.max(safeLimit * 8, safeLimit);
 
 		final var to = OffsetDateTime.now();
 		final var from = to.minus(safeLookback);
 
 		return fetchCandidates(from, queryLimit, safeLanguage)
 			.collectList()
-			.map(candidates -> new DailyBrief(
-				OffsetDateTime.now(),
-				from,
-				to,
-				safeLanguage,
-				selectItems(candidates, safeLimit, safeLanguage, normalizedTopics)
-			));
+			.flatMap(candidates -> findNearDuplicateIds(candidates)
+				.map(nearDuplicateIds -> new DailyBrief(
+					OffsetDateTime.now(),
+					from,
+					to,
+					safeLanguage,
+					selectItems(candidates, safeLimit, safeLanguage, normalizedTopics, nearDuplicateIds)
+				)));
 	}
 
 	private Flux<Candidate> fetchCandidates(final OffsetDateTime from, final int limit, final String language) {
@@ -124,15 +133,27 @@ public class DailyBriefService {
 			.all();
 	}
 
-	private List<DailyBriefItem> selectItems(
+	List<DailyBriefItem> selectItems(
 		final List<Candidate> candidates,
 		final int maxItems,
 		final String language,
 		final Set<String> topics
 	) {
+		return selectItems(candidates, maxItems, language, topics, Map.of());
+	}
+
+	List<DailyBriefItem> selectItems(
+		final List<Candidate> candidates,
+		final int maxItems,
+		final String language,
+		final Set<String> topics,
+		final Map<String, Set<String>> nearDuplicateIds
+	) {
 		final List<DailyBriefItem> selected = new ArrayList<>();
 		final Set<String> seenTitles = new HashSet<>();
 		final Set<String> seenUrls = new HashSet<>();
+		final Set<String> selectedIds = new HashSet<>();
+		final List<CandidateFingerprint> selectedFingerprints = new ArrayList<>();
 
 		for (final var candidate : candidates) {
 			if (selected.size() >= maxItems) break;
@@ -146,6 +167,7 @@ public class DailyBriefService {
 
 			final var parts = splitSummary(title, candidate.summary(), language);
 			if (!matchesAnyTopic(candidate, parts, topics)) continue;
+			if (isNearDuplicate(candidate, title, parts, selectedIds, nearDuplicateIds, selectedFingerprints)) continue;
 			final var importance = scoreImportance(candidate, parts, language);
 			final var moderated = briefToneModerationService.moderate(
 				title,
@@ -173,8 +195,71 @@ public class DailyBriefService {
 				moderated.moderatedWhyImportant(),
 				moderated.moderatedWhatNext()
 			));
+			if (candidate.id() != null && !candidate.id().isBlank()) {
+				selectedIds.add(candidate.id());
+			}
+			selectedFingerprints.add(candidateFingerprint(title, parts));
 		}
 		return selected;
+	}
+
+	private Mono<Map<String, Set<String>>> findNearDuplicateIds(final List<Candidate> candidates) {
+		if (candidates == null || candidates.isEmpty()) {
+			return Mono.just(Map.of());
+		}
+		final Set<String> candidateIds = candidates.stream()
+			.map(Candidate::id)
+			.filter(id -> id != null && !id.isBlank())
+			.collect(Collectors.toSet());
+		if (candidateIds.isEmpty()) {
+			return Mono.just(Map.of());
+		}
+
+		return Flux.fromIterable(candidateIds)
+			.flatMap(id -> similarityStore.neighbors(id, BRIEF_NEAR_DUPLICATE_MIN_SCORE)
+				.map(NewsSimilarityStore.SimilarItem::id)
+				.filter(candidateIds::contains)
+				.map(neighborId -> Map.entry(id, neighborId)))
+			.collectList()
+			.map(pairs -> {
+				final Map<String, Set<String>> nearDuplicateIds = new HashMap<>();
+				for (final var pair : pairs) {
+					nearDuplicateIds.computeIfAbsent(pair.getKey(), ignored -> new HashSet<>()).add(pair.getValue());
+					nearDuplicateIds.computeIfAbsent(pair.getValue(), ignored -> new HashSet<>()).add(pair.getKey());
+				}
+				return nearDuplicateIds;
+			});
+	}
+
+	private boolean isNearDuplicate(
+		final Candidate candidate,
+		final String title,
+		final SummaryParts parts,
+		final Set<String> selectedIds,
+		final Map<String, Set<String>> nearDuplicateIds,
+		final List<CandidateFingerprint> selectedFingerprints
+	) {
+		final String candidateId = candidate.id();
+		if (candidateId != null && !candidateId.isBlank()) {
+			final Set<String> duplicates = nearDuplicateIds.getOrDefault(candidateId, Set.of());
+			for (final String selectedId : selectedIds) {
+				if (duplicates.contains(selectedId)) {
+					return true;
+				}
+			}
+		}
+
+		final CandidateFingerprint candidateFingerprint = candidateFingerprint(title, parts);
+		for (final CandidateFingerprint selectedFingerprint : selectedFingerprints) {
+			if (candidateFingerprint.signature().equals(selectedFingerprint.signature())) {
+				return true;
+			}
+			if (overlapRatio(candidateFingerprint.tokens(), selectedFingerprint.tokens()) >= MIN_NEAR_DUPLICATE_TOKEN_RATIO
+				&& overlapCount(candidateFingerprint.tokens(), selectedFingerprint.tokens()) >= MIN_NEAR_DUPLICATE_TOKEN_OVERLAP) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean matchesAnyTopic(final Candidate candidate, final SummaryParts parts, final Set<String> topics) {
@@ -311,13 +396,65 @@ public class DailyBriefService {
 		return value.substring(0, Math.max(0, maxLength - 1)).strip() + "…";
 	}
 
-	private record Candidate(
+	private CandidateFingerprint candidateFingerprint(final String title, final SummaryParts parts) {
+		final String combined = dedupKey(title + " " + parts.whatHappened() + " " + parts.whyImportant());
+		return new CandidateFingerprint(combined, tokens(combined));
+	}
+
+	private Set<String> tokens(final String normalized) {
+		if (normalized == null || normalized.isBlank()) {
+			return Set.of();
+		}
+		final Set<String> tokens = new HashSet<>();
+		for (final String token : normalized.split(" ")) {
+			if (token.length() >= 4) {
+				tokens.add(normalizeToken(token));
+			}
+		}
+		return tokens;
+	}
+
+	private String normalizeToken(final String token) {
+		if (token == null || token.isBlank()) {
+			return "";
+		}
+		final String cleanToken = token.strip();
+		return cleanToken.length() <= 6 ? cleanToken : cleanToken.substring(0, 6);
+	}
+
+	private int overlapCount(final Set<String> left, final Set<String> right) {
+		if (left.isEmpty() || right.isEmpty()) {
+			return 0;
+		}
+		int overlap = 0;
+		for (final String token : left) {
+			if (right.contains(token)) {
+				overlap++;
+			}
+		}
+		return overlap;
+	}
+
+	private double overlapRatio(final Set<String> left, final Set<String> right) {
+		final int minSize = Math.min(left.size(), right.size());
+		if (minSize == 0) {
+			return 0d;
+		}
+		return (double) overlapCount(left, right) / minSize;
+	}
+
+	static record Candidate(
 		String id,
 		String title,
 		String url,
 		String media,
 		OffsetDateTime eventAt,
 		String summary
+	) {}
+
+	private record CandidateFingerprint(
+		String signature,
+		Set<String> tokens
 	) {}
 
 	private record SummaryParts(
