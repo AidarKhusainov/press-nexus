@@ -69,10 +69,10 @@ Last updated: 2026-03-09
 
 | Metric | Target | Current | Status |
 |---|---|---|---|
-| D7 retention | `>= 35%` | no data | TODO |
-| Useful | `>= 70%` | no data | TODO |
-| Noise | `<= 20%` | no data | TODO |
-| Premium intent | `>= 10%` | no data | TODO |
+| D7 retention | `>= 35%` | no data (cohort=0, 2026-03-08) | TODO |
+| Useful | `>= 70%` | no data (quality feedback=0, 2026-03-08) | TODO |
+| Noise | `<= 20%` | no data (quality feedback=0, 2026-03-08) | TODO |
+| Premium intent | `>= 10%` | no data (delivered=0, 2026-03-08) | TODO |
 
 ## Next Tasks (priority)
 
