@@ -175,7 +175,8 @@ public class DailyBriefDeliveryService {
 					Map.of("text", "😟 Тревожно", "callback_data", TelegramFeedbackCallbackData.build("anxious", item.newsId()))
 				),
 				List.of(
-					Map.of("text", "↗ Источник", "url", item.url())
+					Map.of("text", "↗ Источник", "callback_data", TelegramFeedbackCallbackData.build("click", item.newsId())),
+					Map.of("text", "🚫 Отписаться", "callback_data", TelegramFeedbackCallbackData.build("unsubscribe", null))
 				)
 			)
 		);

@@ -2,6 +2,7 @@ package com.nexus.press.app.service.profile;
 
 import reactor.core.publisher.Mono;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,12 +57,14 @@ class TelegramOnboardingBotServiceTest {
 	@Test
 	void startCommandRegistersUserAndSendsWelcomeMessage() {
 		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(userProfileService.updateDigestEnabled("12345", true)).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
 		when(userProfileService.supportedTopics()).thenReturn(Set.of("world", "economy", "technology"));
 		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), isNull())).thenReturn(Mono.empty());
 
 		service.handleUpdate(updateWithText("/start")).block();
 
 		verify(userProfileService).registerTelegramUser(any());
+		verify(userProfileService).updateDigestEnabled("12345", true);
 		verify(telegramDeliveryService).sendMessage(
 			eq("bot-token"),
 			eq("12345"),
@@ -114,6 +117,59 @@ class TelegramOnboardingBotServiceTest {
 
 		verify(feedbackEventService).recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.USEFUL), eq("news-123"), eq("inline_button"), any());
 		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("полезно")));
+	}
+
+	@Test
+	void clickCallbackStoresEventSendsSourceAndAnswersCallback() {
+		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(feedbackEventService.recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.CLICK), eq("news-123"), eq("inline_button"), any()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("https://example.com/news-123")), isNull()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
+
+		service.handleUpdate(callbackUpdate("fb|click|news-123", """
+			1. Заголовок
+			Источник: Example
+			https://example.com/news-123
+			""")).block();
+
+		verify(feedbackEventService).recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.CLICK), eq("news-123"), eq("inline_button"), any());
+		verify(telegramDeliveryService).sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Источник")), isNull());
+		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("зафиксировал")));
+	}
+
+	@Test
+	void unsubscribeCallbackDisablesDigestStoresEventAndAnswersCallback() {
+		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(userProfileService.updateDigestEnabled("12345", false)).thenReturn(Mono.just(profile(DigestFrequency.DAILY, false)));
+		when(feedbackEventService.recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.UNSUBSCRIBE), isNull(), eq("inline_button"), any()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Отключил отправку")), isNull()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
+
+		service.handleUpdate(callbackUpdate("fb|unsubscribe")).block();
+
+		verify(userProfileService).updateDigestEnabled("12345", false);
+		verify(feedbackEventService).recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.UNSUBSCRIBE), isNull(), eq("inline_button"), any());
+		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("Отключил")));
+	}
+
+	@Test
+	void unsubscribeCommandDisablesDigestAndStoresEvent() {
+		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(userProfileService.updateDigestEnabled("12345", false)).thenReturn(Mono.just(profile(DigestFrequency.DAILY, false)));
+		when(feedbackEventService.recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.UNSUBSCRIBE), isNull(), eq("command"), any()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Отключил отправку")), isNull()))
+			.thenReturn(Mono.empty());
+
+		service.handleUpdate(updateWithText("/unsubscribe")).block();
+
+		verify(userProfileService).updateDigestEnabled("12345", false);
+		verify(feedbackEventService).recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.UNSUBSCRIBE), isNull(), eq("command"), any());
+		verify(telegramDeliveryService).sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Чтобы снова включить")), isNull());
 	}
 
 	@Test
@@ -172,6 +228,17 @@ class TelegramOnboardingBotServiceTest {
 	}
 
 	private Map<String, Object> callbackUpdate(final String callbackData) {
+		return callbackUpdate(callbackData, null);
+	}
+
+	private Map<String, Object> callbackUpdate(final String callbackData, final String messageText) {
+		final var message = new LinkedHashMap<String, Object>();
+		message.put("message_id", 77);
+		message.put("chat", Map.of("id", 12345L));
+		if (messageText != null) {
+			message.put("text", messageText);
+		}
+
 		return Map.of(
 			"callback_query", Map.of(
 				"id", "cb-id-1",
@@ -182,15 +249,16 @@ class TelegramOnboardingBotServiceTest {
 					"first_name", "Test",
 					"language_code", "ru"
 				),
-				"message", Map.of(
-					"message_id", 77,
-					"chat", Map.of("id", 12345L)
-				)
+				"message", message
 			)
 		);
 	}
 
 	private UserProfile profile(final DigestFrequency frequency) {
+		return profile(frequency, true);
+	}
+
+	private UserProfile profile(final DigestFrequency frequency, final boolean digestEnabled) {
 		return new UserProfile(
 			UUID.randomUUID(),
 			"12345",
@@ -200,7 +268,7 @@ class TelegramOnboardingBotServiceTest {
 			"ru",
 			"UTC",
 			frequency,
-			true,
+			digestEnabled,
 			OffsetDateTime.now(),
 			null,
 			OffsetDateTime.now(),

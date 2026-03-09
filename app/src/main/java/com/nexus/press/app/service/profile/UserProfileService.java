@@ -118,6 +118,25 @@ public class UserProfileService {
 				: Mono.error(new IllegalArgumentException("Пользователь с таким chatId не найден")));
 	}
 
+	public Mono<UserProfile> updateDigestEnabled(final String chatId, final boolean digestEnabled) {
+		if (!StringUtils.hasText(chatId)) {
+			return Mono.error(new IllegalArgumentException("chatId обязателен для обновления подписки"));
+		}
+		return db.sql("""
+			UPDATE users
+			SET digest_enabled = :digestEnabled,
+			    updated_at = now()
+			WHERE telegram_chat_id = :chatId
+			""")
+			.bind("digestEnabled", digestEnabled)
+			.bind("chatId", chatId.strip())
+			.fetch()
+			.rowsUpdated()
+			.flatMap(rows -> rows > 0
+				? findByChatId(chatId)
+				: Mono.error(new IllegalArgumentException("Пользователь с таким chatId не найден")));
+	}
+
 	public Mono<UserProfile> findByChatId(final String chatId) {
 		if (!StringUtils.hasText(chatId)) {
 			return Mono.empty();

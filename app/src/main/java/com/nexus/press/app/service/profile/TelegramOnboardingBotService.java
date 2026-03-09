@@ -9,6 +9,7 @@ import java.util.Set;
 import com.nexus.press.app.config.property.TelegramDeliveryProperties;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
+import com.nexus.press.app.service.feedback.FeedbackEventType;
 import com.nexus.press.app.service.feedback.TelegramFeedbackCallbackData;
 import com.nexus.press.app.service.premium.PremiumIntentCallbackData;
 import com.nexus.press.app.service.premium.PremiumIntentEventService;
@@ -51,6 +52,9 @@ public class TelegramOnboardingBotService {
 		if (text.startsWith("/profile")) {
 			return handleProfile(message.chatId());
 		}
+		if (text.startsWith("/unsubscribe") || text.startsWith("/stop")) {
+			return handleUnsubscribeCommand(message, text);
+		}
 		if (text.startsWith("/premium")) {
 			return handlePremiumCommand(message);
 		}
@@ -81,6 +85,9 @@ public class TelegramOnboardingBotService {
 		final CallbackContext callback,
 		final TelegramFeedbackCallbackData feedback
 	) {
+		final String sourceUrl = feedback.eventType() == FeedbackEventType.CLICK
+			? extractSourceUrlFromMessage(callback.messageText())
+			: null;
 		final var userContext = new TelegramUserContext(
 			callback.chatId(),
 			callback.userId(),
@@ -90,18 +97,44 @@ public class TelegramOnboardingBotService {
 		);
 
 		return userProfileService.registerTelegramUser(userContext)
+			.then(applyFeedbackSideEffectsBeforeEvent(callback.chatId(), feedback.eventType()))
 			.then(feedbackEventService.recordTelegramFeedback(
 				callback.chatId(),
 				feedback.eventType(),
 				feedback.newsId(),
 				"inline_button",
-				buildFeedbackPayload(callback, feedback)
+				buildFeedbackPayload(callback, feedback, sourceUrl)
 			))
+			.then(applyFeedbackSideEffectsAfterEvent(callback.chatId(), feedback.eventType(), sourceUrl))
 			.then(answerCallback(callback.callbackId(), feedbackAckText(feedback.eventType().dbValue())))
 			.onErrorResume(ex -> {
 				log.warn("Не удалось обработать feedback callback data={}", callback.data(), ex);
 				return answerCallback(callback.callbackId(), "Не сохранил feedback, попробуй еще раз.");
 			});
+	}
+
+	private Mono<Void> applyFeedbackSideEffectsBeforeEvent(final String chatId, final FeedbackEventType eventType) {
+		if (eventType != FeedbackEventType.UNSUBSCRIBE) {
+			return Mono.empty();
+		}
+		return userProfileService.updateDigestEnabled(chatId, false).then();
+	}
+
+	private Mono<Void> applyFeedbackSideEffectsAfterEvent(
+		final String chatId,
+		final FeedbackEventType eventType,
+		final String sourceUrl
+	) {
+		if (eventType == FeedbackEventType.CLICK) {
+			if (StringUtils.hasText(sourceUrl)) {
+				return sendMessage(chatId, "Источник:\n" + sourceUrl);
+			}
+			return sendMessage(chatId, "Не нашел ссылку в карточке. Открой источник из текста сообщения выше.");
+		}
+		if (eventType == FeedbackEventType.UNSUBSCRIBE) {
+			return sendMessage(chatId, unsubscribeConfirmationText());
+		}
+		return Mono.empty();
 	}
 
 	private Mono<Void> handlePremiumIntentCallback(
@@ -145,6 +178,7 @@ public class TelegramOnboardingBotService {
 			message.language());
 
 		return userProfileService.registerTelegramUser(userContext)
+			.then(userProfileService.updateDigestEnabled(message.chatId(), true))
 			.then(sendMessage(message.chatId(), buildWelcomeMessage(message.firstName())));
 	}
 
@@ -210,6 +244,23 @@ public class TelegramOnboardingBotService {
 					buildPremiumOfferMessage(profile, segment),
 					premiumOfferKeyboard(segment)
 				);
+				});
+	}
+
+	private Mono<Void> handleUnsubscribeCommand(final MessageContext message, final String commandText) {
+		return ensureUserExists(message)
+			.then(userProfileService.updateDigestEnabled(message.chatId(), false))
+			.then(feedbackEventService.recordTelegramFeedback(
+				message.chatId(),
+				FeedbackEventType.UNSUBSCRIBE,
+				null,
+				"command",
+				buildUnsubscribeCommandPayload(message, commandText)
+			))
+			.then(sendMessage(message.chatId(), unsubscribeConfirmationText()))
+			.onErrorResume(ex -> {
+				log.warn("Не удалось обработать команду отписки command={} chatId={}", commandText, message.chatId(), ex);
+				return sendMessage(message.chatId(), "Не удалось отключить рассылку, попробуй еще раз.");
 			});
 	}
 
@@ -230,6 +281,7 @@ public class TelegramOnboardingBotService {
 			/topics world,economy,technology - выбрать темы
 			/frequency daily|2d|3d - выбрать частоту
 			/profile - посмотреть текущие настройки
+			/unsubscribe или /stop - отключить рассылку
 			/premium - статус beta (сейчас всё бесплатно)
 			""");
 	}
@@ -269,7 +321,8 @@ public class TelegramOnboardingBotService {
 
 	private Map<String, Object> buildFeedbackPayload(
 		final CallbackContext callback,
-		final TelegramFeedbackCallbackData feedback
+		final TelegramFeedbackCallbackData feedback,
+		final String sourceUrl
 	) {
 		final var payload = new LinkedHashMap<String, Object>();
 		payload.put("telegram_callback_id", callback.callbackId());
@@ -281,6 +334,18 @@ public class TelegramOnboardingBotService {
 		if (feedback.newsId() != null) {
 			payload.put("news_id", feedback.newsId());
 		}
+		if (StringUtils.hasText(sourceUrl)) {
+			payload.put("source_url", sourceUrl);
+		}
+		return payload;
+	}
+
+	private Map<String, Object> buildUnsubscribeCommandPayload(final MessageContext message, final String commandText) {
+		final var payload = new LinkedHashMap<String, Object>();
+		payload.put("command", StringUtils.hasText(commandText) ? commandText.strip() : "/unsubscribe");
+		payload.put("telegram_user_id", message.userId());
+		payload.put("username", message.username());
+		payload.put("language", message.language());
 		return payload;
 	}
 
@@ -289,8 +354,17 @@ public class TelegramOnboardingBotService {
 			case "useful" -> "Спасибо, отмечено как полезно.";
 			case "noise" -> "Принято, учтем это как шум.";
 			case "anxious" -> "Понял, сделаем подачу спокойнее.";
+			case "click" -> "Переход к источнику зафиксировал.";
+			case "unsubscribe" -> "Отключил доставку дайджеста.";
 			default -> "Спасибо за feedback.";
 		};
+	}
+
+	private String unsubscribeConfirmationText() {
+		return """
+			Отключил отправку дайджеста.
+			Чтобы снова включить подписку, отправь /start.
+			""";
 	}
 
 	private Map<String, Object> buildPremiumPayload(
@@ -436,6 +510,20 @@ public class TelegramOnboardingBotService {
 			""";
 	}
 
+	private String extractSourceUrlFromMessage(final String messageText) {
+		if (!StringUtils.hasText(messageText)) {
+			return null;
+		}
+		final String[] lines = messageText.split("\\R");
+		for (int i = lines.length - 1; i >= 0; i--) {
+			final String line = lines[i].strip();
+			if (line.startsWith("http://") || line.startsWith("https://")) {
+				return line;
+			}
+		}
+		return null;
+	}
+
 	private String buildProfileMessage(final UserProfile profile) {
 		return """
 			Текущий профиль:
@@ -514,6 +602,10 @@ public class TelegramOnboardingBotService {
 		final Map<String, Object> from = asMap(callback.get("from"));
 		final Map<String, Object> message = asMap(callback.get("message"));
 		final Map<String, Object> chat = message == null ? null : asMap(message.get("chat"));
+		final String messageText = asString(message == null ? null : message.get("text"));
+		final String callbackMessageText = StringUtils.hasText(messageText)
+			? messageText
+			: asString(message == null ? null : message.get("caption"));
 		return new CallbackContext(
 			asString(callback.get("id")),
 			asString(callback.get("data")),
@@ -522,7 +614,8 @@ public class TelegramOnboardingBotService {
 			asString(from == null ? null : from.get("username")),
 			asString(from == null ? null : from.get("first_name")),
 			asString(from == null ? null : from.get("language_code")),
-			asLong(message == null ? null : message.get("message_id"))
+			asLong(message == null ? null : message.get("message_id")),
+			callbackMessageText
 		);
 	}
 
@@ -576,7 +669,8 @@ public class TelegramOnboardingBotService {
 		String username,
 		String firstName,
 		String language,
-		Long messageId
+		Long messageId,
+		String messageText
 	) {
 	}
 }
