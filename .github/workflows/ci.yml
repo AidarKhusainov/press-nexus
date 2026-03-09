@@ -141,9 +141,18 @@ jobs:
 
       - name: Upload Grype SARIF
         if: always() && steps.grype.outputs.sarif != ''
-        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ steps.grype.outputs.sarif }}
+          wait-for-processing: false
+
+      - name: Upload Grype SARIF artifact
+        if: always() && steps.grype.outputs.sarif != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-sarif
+          path: ${{ steps.grype.outputs.sarif }}
 
       - name: Upload SBOM artifact
         if: always()
