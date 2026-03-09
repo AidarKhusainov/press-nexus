@@ -62,6 +62,7 @@ export GRAFANA_ADMIN_PASSWORD='<set-grafana-password>'
 - Build + tests: `./mvnw clean verify`
 - Tests only: `./mvnw -pl app test`
 - Generate HTTP controllers from OpenAPI: `./scripts/generate-openapi.sh`
+- Update Go/No-Go section in MVP tracker: `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD`
 - Fast local check: `./scripts/verify-local.sh`
 - Start monitoring stack:
 ```bash

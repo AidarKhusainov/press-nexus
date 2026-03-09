@@ -76,11 +76,12 @@ Last updated: 2026-03-09
 
 ## Next Tasks (priority)
 
-1. Fill Go/No-Go metrics from real beta traffic using dashboard `Press Nexus Product Analytics`.
+1. Fill Go/No-Go metrics from real beta traffic via `./scripts/update-mvp-progress-go-no-go.sh` (source: dashboard `Press Nexus Product Analytics` / API `/api/analytics/product-report/daily`).
 2. Return to premium intent test after beta stabilization.
 
 ## How to Update Progress
 
 1. After each feature, update statuses in the tables above.
 2. For each `CHECK`, add a link to report/metric (Grafana/SQL/log).
-3. Update `Go/No-Go metrics` section daily with actual values.
+3. Update `Go/No-Go metrics` section daily with actual values by running:
+   - `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD`
