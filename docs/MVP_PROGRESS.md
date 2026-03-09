@@ -86,6 +86,15 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 3. Expand beta to 50-100 users after the first quality fixes land.
 4. Defer daily Go/No-Go metric refresh via `./scripts/update-mvp-progress-go-no-go.sh` until beta traffic is non-zero.
 
+## Next Development Tasks
+
+1. Finish dedup to production-ready quality: use similarity/cluster signals earlier in the pipeline, suppress near-duplicates beyond URL/title matching, and add a reproducible validation for the `-70% duplicates` criterion.
+   Main code areas: `service/news/NewsSummarizationService.java`, `service/news/NewsClusteringService.java`, `service/brief/DailyBriefService.java`.
+2. Tune digest noise/ranking quality: improve `selectItems` and `scoreImportance`, add stronger suppression of similar cards, better source diversity, and a more stable must/good balance in the brief.
+   Main code area: `service/brief/DailyBriefService.java`.
+3. Add a fixture-based regression suite for digest quality: cover dedup, ranking, tone moderation, and 3-block summary formatting so quality changes are reproducible before beta traffic is large enough.
+   Main code areas: `service/brief/DailyBriefService.java`, `service/brief/BriefToneModerationService.java`, `app/src/test/java/**`.
+
 ## How to Update Progress
 
 1. After each feature, update statuses in the tables above.
