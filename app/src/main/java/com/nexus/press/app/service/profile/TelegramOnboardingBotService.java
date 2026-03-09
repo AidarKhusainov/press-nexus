@@ -1,12 +1,16 @@
 package com.nexus.press.app.service.profile;
 
 import reactor.core.publisher.Mono;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import com.nexus.press.app.config.property.TelegramDeliveryProperties;
+import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
 import com.nexus.press.app.service.feedback.FeedbackEventType;
@@ -28,6 +32,7 @@ public class TelegramOnboardingBotService {
 	private final TelegramDeliveryProperties telegramDeliveryProperties;
 	private final FeedbackEventService feedbackEventService;
 	private final PremiumIntentEventService premiumIntentEventService;
+	private final AppMetrics appMetrics;
 
 	public Mono<Void> handleUpdate(final Map<String, Object> update) {
 		final CallbackContext callback = extractCallback(update);
@@ -66,6 +71,11 @@ public class TelegramOnboardingBotService {
 			return Mono.empty();
 		}
 
+		final var onboarding = TelegramOnboardingCallbackData.parse(callback.data());
+		if (onboarding.isPresent()) {
+			return handleOnboardingCallback(callback, onboarding.get());
+		}
+
 		final var premiumIntent = PremiumIntentCallbackData.parse(callback.data());
 		if (premiumIntent.isPresent()) {
 			if (!telegramDeliveryProperties.isPremiumEnabled()) {
@@ -79,6 +89,76 @@ public class TelegramOnboardingBotService {
 			return handleFeedbackCallback(callback, feedback.get());
 		}
 		return answerCallback(callback.callbackId(), "Не удалось распознать действие.");
+	}
+
+	private Mono<Void> handleOnboardingCallback(
+		final CallbackContext callback,
+		final TelegramOnboardingCallbackData onboarding
+	) {
+		final var userContext = new TelegramUserContext(
+			callback.chatId(),
+			callback.userId(),
+			callback.username(),
+			callback.firstName(),
+			callback.language()
+		);
+
+		return userProfileService.registerTelegramUser(userContext)
+			.flatMap(profile -> switch (onboarding.action()) {
+				case TOPIC -> handleOnboardingTopicCallback(callback, profile, onboarding.value());
+				case TOPICS_DONE -> handleOnboardingTopicsDoneCallback(callback, profile);
+				case FREQUENCY -> handleOnboardingFrequencyCallback(callback, onboarding.value());
+			})
+			.onErrorResume(IllegalArgumentException.class, ex -> answerCallback(callback.callbackId(), ex.getMessage()))
+			.onErrorResume(ex -> {
+				log.warn("Не удалось обработать onboarding callback data={}", callback.data(), ex);
+				return answerCallback(callback.callbackId(), "Не обработал onboarding действие, попробуй еще раз.");
+			});
+	}
+
+	private Mono<Void> handleOnboardingTopicCallback(
+		final CallbackContext callback,
+		final UserProfile profile,
+		final String topic
+	) {
+		if (!userProfileService.supportedTopics().contains(topic)) {
+			return answerCallback(callback.callbackId(), "Неизвестная тема: " + topic);
+		}
+
+		final var selectedTopics = new LinkedHashSet<>(profile.topics());
+		final boolean alreadySelected = selectedTopics.contains(topic);
+		if (alreadySelected) {
+			if (selectedTopics.size() == 1) {
+				return answerCallback(callback.callbackId(), "Нужна хотя бы одна тема.");
+			}
+			selectedTopics.remove(topic);
+		} else {
+			selectedTopics.add(topic);
+		}
+
+		return userProfileService.updateTopics(callback.chatId(), selectedTopics)
+			.flatMap(updated -> answerCallback(callback.callbackId(), topicSelectionAck(topic, !alreadySelected, updated.topics().size())));
+	}
+
+	private Mono<Void> handleOnboardingTopicsDoneCallback(final CallbackContext callback, final UserProfile profile) {
+		if (profile.topics() == null || profile.topics().isEmpty()) {
+			return answerCallback(callback.callbackId(), "Сначала выбери хотя бы одну тему.");
+		}
+
+		return answerCallback(callback.callbackId(), "Отлично, теперь частота.")
+			.then(sendMessage(
+				callback.chatId(),
+				buildFrequencySelectionMessage(profile.topics()),
+				onboardingFrequencyKeyboard()
+			));
+	}
+
+	private Mono<Void> handleOnboardingFrequencyCallback(final CallbackContext callback, final String frequencyToken) {
+		final DigestFrequency frequency = DigestFrequency.fromCommandToken(frequencyToken).orElse(null);
+		if (frequency == null) {
+			return answerCallback(callback.callbackId(), "Частота не поддерживается. Выбери daily, 2d или 3d.");
+		}
+		return applyFrequencySelection(callback.chatId(), frequency, callback.callbackId());
 	}
 
 	private Mono<Void> handleFeedbackCallback(
@@ -179,13 +259,13 @@ public class TelegramOnboardingBotService {
 
 		return userProfileService.registerTelegramUser(userContext)
 			.then(userProfileService.updateDigestEnabled(message.chatId(), true))
-			.then(sendMessage(message.chatId(), buildWelcomeMessage(message.firstName())));
+			.then(sendMessage(message.chatId(), buildWelcomeMessage(message.firstName()), onboardingTopicsKeyboard()));
 	}
 
 	private Mono<Void> handleTopics(final MessageContext message, final String text) {
 		final String rawTopics = commandArgument(text);
 		if (!StringUtils.hasText(rawTopics)) {
-			return sendMessage(message.chatId(), buildTopicsUsageMessage());
+			return sendMessage(message.chatId(), buildTopicsUsageMessage(), onboardingTopicsKeyboard());
 		}
 
 		final List<String> topics = Arrays.stream(rawTopics.split("[,\\s]+"))
@@ -195,8 +275,11 @@ public class TelegramOnboardingBotService {
 
 		return ensureUserExists(message)
 			.then(userProfileService.updateTopics(message.chatId(), topics))
-			.flatMap(profile -> sendMessage(message.chatId(),
-				"Темы сохранены: " + String.join(", ", profile.topics()) + "\nТеперь выбери частоту: /frequency daily|2d|3d"))
+			.flatMap(profile -> sendMessage(
+				message.chatId(),
+				buildFrequencySelectionMessage(profile.topics()),
+				onboardingFrequencyKeyboard()
+			))
 			.onErrorResume(IllegalArgumentException.class, ex -> sendMessage(message.chatId(), ex.getMessage()));
 	}
 
@@ -212,9 +295,7 @@ public class TelegramOnboardingBotService {
 		}
 
 		return ensureUserExists(message)
-			.then(userProfileService.updateFrequency(message.chatId(), frequency))
-			.flatMap(profile -> sendMessage(message.chatId(), "Частота обновлена: " + profile.digestFrequency().getDisplayLabel()))
-			.onErrorResume(IllegalArgumentException.class, ex -> sendMessage(message.chatId(), ex.getMessage()));
+			.then(applyFrequencySelection(message.chatId(), frequency, null));
 	}
 
 	private Mono<Void> handleProfile(final String chatId) {
@@ -472,19 +553,84 @@ public class TelegramOnboardingBotService {
 		return text.substring(split + 1).strip();
 	}
 
+	private Mono<Void> applyFrequencySelection(
+		final String chatId,
+		final DigestFrequency frequency,
+		final String callbackId
+	) {
+		return userProfileService.findByChatId(chatId)
+			.switchIfEmpty(Mono.error(new IllegalArgumentException("Профиль не найден. Нажми /start для начала onboarding.")))
+			.flatMap(before -> userProfileService.updateFrequency(chatId, frequency)
+				.flatMap(updated -> {
+					final Duration completionDuration = resolveOnboardingCompletionDuration(before, updated);
+					if (completionDuration != null) {
+						appMetrics.onboardingCompleted("telegram", completionDuration);
+						log.info(
+							"Onboarding завершен chatId={} durationSeconds={} topics={} frequency={}",
+							updated.telegramChatId(),
+							completionDuration.toSeconds(),
+							updated.topics().size(),
+							updated.digestFrequency().getDbValue()
+						);
+					}
+					final Mono<Void> callbackAck = StringUtils.hasText(callbackId)
+						? answerCallback(callbackId, completionDuration == null ? "Частота сохранена." : "Onboarding завершен.")
+						: Mono.empty();
+					return callbackAck.then(sendMessage(chatId, buildFrequencySavedMessage(updated, completionDuration)));
+				}))
+			.onErrorResume(IllegalArgumentException.class, ex -> {
+				if (StringUtils.hasText(callbackId)) {
+					return answerCallback(callbackId, ex.getMessage());
+				}
+				return sendMessage(chatId, ex.getMessage());
+			});
+	}
+
+	private Duration resolveOnboardingCompletionDuration(final UserProfile before, final UserProfile updated) {
+		if (before == null || updated == null || before.onboardedAt() != null || updated.onboardedAt() == null || before.createdAt() == null) {
+			return null;
+		}
+		final Duration raw = Duration.between(before.createdAt(), updated.onboardedAt());
+		return raw.isNegative() ? Duration.ZERO : raw;
+	}
+
+	private String buildFrequencySavedMessage(final UserProfile profile, final Duration completionDuration) {
+		if (completionDuration == null) {
+			return "Частота обновлена: " + profile.digestFrequency().getDisplayLabel();
+		}
+		return """
+			Частота обновлена: %s
+			Onboarding завершен за %s.
+			Готово, дальше дайджест будет приходить автоматически.
+			""".formatted(profile.digestFrequency().getDisplayLabel(), formatDurationHuman(completionDuration));
+	}
+
+	private String formatDurationHuman(final Duration duration) {
+		if (duration == null || duration.isNegative()) {
+			return "< 1 мин";
+		}
+		final long totalSeconds = duration.toSeconds();
+		if (totalSeconds < 60) {
+			return "< 1 мин";
+		}
+		final long roundedMinutes = Math.max(1, Math.round(totalSeconds / 60.0));
+		return "~" + roundedMinutes + " мин";
+	}
+
 	private String buildWelcomeMessage(final String firstName) {
 		final String name = StringUtils.hasText(firstName) ? firstName.strip() : "друг";
 		return """
 			Привет, %s!
 			Я помогу настроить персональный daily brief.
 			
-			1) Выбери темы:
-			/topics world,economy,technology
+			1) Выбери темы кнопками ниже.
 			
 			Доступные темы:
 			%s
 			
-			2) Выбери частоту:
+			2) Нажми "✅ Темы выбраны", затем выбери частоту.
+			Если удобнее, команды тоже работают:
+			/topics world,economy,technology
 			/frequency daily|2d|3d
 			
 			Сейчас весь функционал бесплатный в beta-режиме.
@@ -495,6 +641,7 @@ public class TelegramOnboardingBotService {
 		return """
 			Укажи темы после команды, например:
 			/topics world,economy,technology
+			или выбери их кнопками ниже.
 			
 			Доступные темы:
 			%s
@@ -508,6 +655,70 @@ public class TelegramOnboardingBotService {
 			/frequency 2d
 			/frequency 3d
 			""";
+	}
+
+	private String buildFrequencySelectionMessage(final List<String> topics) {
+		final String topicsText = topics == null || topics.isEmpty() ? "не выбраны" : String.join(", ", topics);
+		return """
+			Темы сохранены: %s
+			Теперь выбери частоту доставки.
+			""".formatted(topicsText);
+	}
+
+	private String topicSelectionAck(final String topic, final boolean selected, final int selectedCount) {
+		final String action = selected ? "Выбрал" : "Убрал";
+		return action + " тему " + topic + ". Выбрано: " + selectedCount;
+	}
+
+	private Map<String, Object> onboardingTopicsKeyboard() {
+		final var rows = new ArrayList<List<Map<String, Object>>>();
+		var currentRow = new ArrayList<Map<String, Object>>(2);
+		for (final String topic : userProfileService.supportedTopics()) {
+			currentRow.add(Map.of(
+				"text", topicButtonLabel(topic),
+				"callback_data", TelegramOnboardingCallbackData.buildTopic(topic)
+			));
+			if (currentRow.size() == 2) {
+				rows.add(List.copyOf(currentRow));
+				currentRow = new ArrayList<>(2);
+			}
+		}
+		if (!currentRow.isEmpty()) {
+			rows.add(List.copyOf(currentRow));
+		}
+		rows.add(List.of(Map.of(
+			"text", "✅ Темы выбраны",
+			"callback_data", TelegramOnboardingCallbackData.buildTopicsDone()
+		)));
+		return Map.of("inline_keyboard", rows);
+	}
+
+	private Map<String, Object> onboardingFrequencyKeyboard() {
+		return Map.of(
+			"inline_keyboard", List.of(
+				List.of(
+					Map.of("text", "Каждый день", "callback_data", TelegramOnboardingCallbackData.buildFrequency("daily")),
+					Map.of("text", "Раз в 2 дня", "callback_data", TelegramOnboardingCallbackData.buildFrequency("2d")),
+					Map.of("text", "Раз в 3 дня", "callback_data", TelegramOnboardingCallbackData.buildFrequency("3d"))
+				)
+			)
+		);
+	}
+
+	private String topicButtonLabel(final String topic) {
+		return switch (topic) {
+			case "world" -> "🌍 Мир";
+			case "russia" -> "🇷🇺 Россия";
+			case "economy" -> "💹 Экономика";
+			case "business" -> "🏢 Бизнес";
+			case "technology" -> "💻 Технологии";
+			case "science" -> "🔬 Наука";
+			case "politics" -> "🏛 Политика";
+			case "society" -> "🧩 Общество";
+			case "sports" -> "⚽ Спорт";
+			case "culture" -> "🎭 Культура";
+			default -> topic;
+		};
 	}
 
 	private String extractSourceUrlFromMessage(final String messageText) {

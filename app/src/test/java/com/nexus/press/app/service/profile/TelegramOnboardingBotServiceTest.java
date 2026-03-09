@@ -1,13 +1,16 @@
 package com.nexus.press.app.service.profile;
 
 import reactor.core.publisher.Mono;
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import com.nexus.press.app.config.property.TelegramDeliveryProperties;
+import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
 import com.nexus.press.app.service.feedback.FeedbackEventType;
@@ -37,6 +40,8 @@ class TelegramOnboardingBotServiceTest {
 	private FeedbackEventService feedbackEventService;
 	@Mock
 	private PremiumIntentEventService premiumIntentEventService;
+	@Mock
+	private AppMetrics appMetrics;
 
 	private TelegramOnboardingBotService service;
 	private TelegramDeliveryProperties props;
@@ -50,7 +55,8 @@ class TelegramOnboardingBotServiceTest {
 			telegramDeliveryService,
 			props,
 			feedbackEventService,
-			premiumIntentEventService
+			premiumIntentEventService,
+			appMetrics
 		);
 	}
 
@@ -58,8 +64,8 @@ class TelegramOnboardingBotServiceTest {
 	void startCommandRegistersUserAndSendsWelcomeMessage() {
 		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
 		when(userProfileService.updateDigestEnabled("12345", true)).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
-		when(userProfileService.supportedTopics()).thenReturn(Set.of("world", "economy", "technology"));
-		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), isNull())).thenReturn(Mono.empty());
+		when(userProfileService.supportedTopics()).thenReturn(new LinkedHashSet<>(List.of("world", "economy", "technology")));
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), any())).thenReturn(Mono.empty());
 
 		service.handleUpdate(updateWithText("/start")).block();
 
@@ -68,14 +74,15 @@ class TelegramOnboardingBotServiceTest {
 		verify(telegramDeliveryService).sendMessage(
 			eq("bot-token"),
 			eq("12345"),
-			argThat(text -> text.contains("/topics") && text.contains("/frequency")),
-			isNull()
+			argThat(text -> text.contains("/topics") && text.contains("/frequency") && text.contains("кнопками ниже")),
+			argThat(markup -> markup != null && markup.containsKey("inline_keyboard"))
 		);
 	}
 
 	@Test
 	void frequencyCommandUpdatesProfile() {
 		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(userProfileService.findByChatId("12345")).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
 		when(userProfileService.updateFrequency("12345", DigestFrequency.EVERY_2_DAYS))
 			.thenReturn(Mono.just(profile(DigestFrequency.EVERY_2_DAYS)));
 		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), isNull())).thenReturn(Mono.empty());
@@ -89,6 +96,57 @@ class TelegramOnboardingBotServiceTest {
 			argThat(text -> text.contains("раз в 2 дня")),
 			isNull()
 		);
+	}
+
+	@Test
+	void onboardingTopicCallbackUpdatesTopicsAndAnswersCallback() {
+		when(userProfileService.supportedTopics()).thenReturn(Set.of("world", "economy", "technology"));
+		when(userProfileService.registerTelegramUser(any()))
+			.thenReturn(Mono.just(profile(DigestFrequency.DAILY, true, null, OffsetDateTime.now().minusMinutes(2), List.of("world"))));
+		when(userProfileService.updateTopics(eq("12345"), argThat(topics -> topics.contains("world") && topics.contains("economy"))))
+			.thenReturn(Mono.just(profile(DigestFrequency.DAILY, true, null, OffsetDateTime.now().minusMinutes(2), List.of("economy", "world"))));
+		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
+
+		service.handleUpdate(callbackUpdate(TelegramOnboardingCallbackData.buildTopic("economy"))).block();
+
+		verify(userProfileService).updateTopics(eq("12345"), argThat(topics -> topics.contains("world") && topics.contains("economy")));
+		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("Выбрал тему economy")));
+	}
+
+	@Test
+	void onboardingTopicsDoneCallbackSendsFrequencyKeyboard() {
+		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), any())).thenReturn(Mono.empty());
+
+		service.handleUpdate(callbackUpdate(TelegramOnboardingCallbackData.buildTopicsDone())).block();
+
+		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("частота")));
+		verify(telegramDeliveryService).sendMessage(
+			eq("bot-token"),
+			eq("12345"),
+			argThat(text -> text.contains("Темы сохранены")),
+			argThat(markup -> markup != null && markup.containsKey("inline_keyboard"))
+		);
+	}
+
+	@Test
+	void onboardingFrequencyCallbackCompletesOnboardingAndRecordsMetric() {
+		final OffsetDateTime createdAt = OffsetDateTime.now().minusSeconds(45);
+		final UserProfile before = profile(DigestFrequency.DAILY, true, null, createdAt, List.of("world"));
+		final UserProfile updated = profile(DigestFrequency.EVERY_2_DAYS, true, OffsetDateTime.now(), createdAt, List.of("world"));
+
+		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(before));
+		when(userProfileService.findByChatId("12345")).thenReturn(Mono.just(before));
+		when(userProfileService.updateFrequency("12345", DigestFrequency.EVERY_2_DAYS)).thenReturn(Mono.just(updated));
+		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), any(), isNull())).thenReturn(Mono.empty());
+
+		service.handleUpdate(callbackUpdate(TelegramOnboardingCallbackData.buildFrequency("2d"))).block();
+
+		verify(appMetrics).onboardingCompleted(eq("telegram"), any(Duration.class));
+		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("Onboarding завершен")));
+		verify(telegramDeliveryService).sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Onboarding завершен")), isNull());
 	}
 
 	@Test
@@ -259,6 +317,16 @@ class TelegramOnboardingBotServiceTest {
 	}
 
 	private UserProfile profile(final DigestFrequency frequency, final boolean digestEnabled) {
+		return profile(frequency, digestEnabled, OffsetDateTime.now(), OffsetDateTime.now(), List.of("world"));
+	}
+
+	private UserProfile profile(
+		final DigestFrequency frequency,
+		final boolean digestEnabled,
+		final OffsetDateTime onboardedAt,
+		final OffsetDateTime createdAt,
+		final List<String> topics
+	) {
 		return new UserProfile(
 			UUID.randomUUID(),
 			"12345",
@@ -269,11 +337,11 @@ class TelegramOnboardingBotServiceTest {
 			"UTC",
 			frequency,
 			digestEnabled,
-			OffsetDateTime.now(),
+			onboardedAt,
 			null,
+			createdAt,
 			OffsetDateTime.now(),
-			OffsetDateTime.now(),
-			List.of("world")
+			topics
 		);
 	}
 }

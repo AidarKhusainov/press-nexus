@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -206,6 +207,22 @@ public class AppMetrics {
 			.description("Delivery message attempts")
 			.tags("channel", channel, "outcome", outcome)
 			.register(meterRegistry);
+	}
+
+	public void onboardingCompleted(final String channel, final Duration duration) {
+		Counter.builder("press.onboarding.completed")
+			.description("Number of completed onboardings")
+			.tags("channel", channel)
+			.register(meterRegistry)
+			.increment();
+
+		final double completionSeconds = duration == null ? 0.0 : Math.max(0.0, duration.toMillis() / 1000.0);
+		DistributionSummary.builder("press.onboarding.completion.seconds")
+			.description("Onboarding completion time in seconds")
+			.baseUnit("seconds")
+			.tags("channel", channel)
+			.register(meterRegistry)
+			.record(completionSeconds);
 	}
 
 	private String errorTag(final Throwable throwable) {
