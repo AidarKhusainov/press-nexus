@@ -10,6 +10,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "press.analytics.product-report")
 public class ProductReportProperties {
 
-	private boolean enabled = false;
+	private boolean enabled = true;
 	private Duration interval = Duration.ofHours(24);
 }

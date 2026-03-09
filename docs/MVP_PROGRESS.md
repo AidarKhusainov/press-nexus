@@ -73,19 +73,23 @@ Last updated: 2026-03-09
 | Useful | `>= 70%` | no data (quality feedback=0, 2026-03-08) | TODO |
 | Noise | `<= 20%` | no data (quality feedback=0, 2026-03-08) | TODO |
 
+Current focus note: daily Go/No-Go refresh is not a priority until closed beta produces non-zero delivery/feedback traffic. Until then, keep the section as-is and focus on user acquisition, onboarding, and digest quality.
+
 ## Product Decision
 
 As of 2026-03-09, beta has no paid premium tier: all current functionality stays available for free. The `/premium` command is informational only, and legacy premium price callbacks no longer create new premium intent events.
 
 ## Next Tasks (priority)
 
-1. Fill Go/No-Go metrics from real beta traffic via `./scripts/update-mvp-progress-go-no-go.sh` (source: dashboard `Press Nexus Product Analytics` / API `/api/analytics/product-report/daily`).
-2. Start closed beta for 20 users and collect first retention/quality feedback in `/api/analytics/product-report/daily`.
+1. Start closed beta for 20 users and collect first retention/quality feedback in `/api/analytics/product-report/daily`.
+2. Adjust noise/ranking quality based on first beta feedback and manual review of digests.
+3. Expand beta to 50-100 users after the first quality fixes land.
+4. Defer daily Go/No-Go metric refresh via `./scripts/update-mvp-progress-go-no-go.sh` until beta traffic is non-zero.
 
 ## How to Update Progress
 
 1. After each feature, update statuses in the tables above.
 2. For each `CHECK`, add a link to report/metric (Grafana/SQL/log).
-3. Update `Go/No-Go metrics` section daily with actual values by running:
+3. Once closed beta generates non-zero delivery/feedback data, update `Go/No-Go metrics` by running:
    - `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD`
    - If the app API is not running but Prometheus has the latest product snapshot, use `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD --prometheus-base-url http://localhost:9090`

@@ -35,6 +35,7 @@
   - queue depth
   - external HTTP latency and error ratio
   - scheduler run/failure counters
+  - daily product-report snapshot gauges for D1/D7 retention and Useful/Noise rates
 - Health endpoints must expose readiness/liveness.
 
 ## Security
@@ -48,4 +49,3 @@
 - Max `hours` for brief endpoint: 168.
 - Max `limit` for brief endpoint: 20.
 - Any change of limits must be reflected in OpenAPI and contract tests.
-

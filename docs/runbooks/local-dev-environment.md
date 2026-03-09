@@ -53,3 +53,9 @@ docker compose up -d ollama-cpu
 ```bash
 docker compose --profile monitoring up -d prometheus grafana loki promtail
 ```
+
+After the app starts, the product-report scheduler is enabled by default. It publishes the previous day's `press.product.report.*` snapshot roughly 45 seconds after startup and then every 24 hours, so `docs/MVP_PROGRESS.md` can be refreshed from Prometheus with:
+
+```bash
+./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD --prometheus-base-url http://localhost:9090
+```
