@@ -173,5 +173,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Detect Dependency Graph support
+        id: dependency-graph
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data: repo} = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const status = repo.security_and_analysis?.dependency_graph?.status ?? "missing";
+            const supported = status === "enabled";
+
+            core.notice(`Dependency Graph status: ${status}`);
+            core.setOutput("supported", supported ? "true" : "false");
+
+      - name: Skip when Dependency Graph is unavailable
+        if: steps.dependency-graph.outputs.supported != 'true'
+        run: |
+          echo "Skipping dependency review because GitHub Dependency Graph is not enabled for this repository."
+
       - name: Dependency review
+        if: steps.dependency-graph.outputs.supported == 'true'
         uses: actions/dependency-review-action@v4
