@@ -108,31 +108,11 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.ref }}
 
-      - name: Prepare SSH key
-        env:
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          raw_key="${PROD_SSH_KEY}"
-          if [[ "${raw_key}" != *$'\n'* && "${raw_key}" == *"\\n"* ]]; then
-            raw_key="$(printf '%b' "${raw_key}")"
-          fi
-          raw_key="$(printf '%s' "${raw_key}" | tr -d '\r')"
-
-          if [[ "${raw_key}" != *"BEGIN OPENSSH PRIVATE KEY"* && "${raw_key}" != *"BEGIN RSA PRIVATE KEY"* && "${raw_key}" != *"BEGIN EC PRIVATE KEY"* && "${raw_key}" != *"BEGIN PRIVATE KEY"* ]]; then
-            decoded_key="$(printf '%s' "${raw_key}" | base64 -d 2>/dev/null || true)"
-            if [[ -n "${decoded_key}" ]]; then
-              raw_key="$(printf '%s' "${decoded_key}" | tr -d '\r')"
-            fi
-          fi
-
-          printf '%s\n' "${raw_key}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-
-          ssh-keygen -y -f ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_KEY }}
+          log-public-key: false
 
       - name: Trust production host
         run: |
@@ -175,15 +155,15 @@ jobs:
 
       - name: Ensure target directory exists
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${PROD_PORT}" "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" "mkdir -p '${PROD_APP_DIR}'"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "${PROD_PORT}" "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" "mkdir -p '${PROD_APP_DIR}'"
 
       - name: Upload deployment files
         run: |
-          scp -i ~/.ssh/deploy_key -P "${PROD_PORT}" deploy/docker-compose.prod.yml \
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" deploy/docker-compose.prod.yml \
             "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/docker-compose.prod.yml"
-          scp -i ~/.ssh/deploy_key -P "${PROD_PORT}" scripts/deploy-prod-stack.sh \
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" scripts/deploy-prod-stack.sh \
             "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/deploy-prod-stack.sh"
-          scp -i ~/.ssh/deploy_key -P "${PROD_PORT}" .deploy/.env \
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" .deploy/.env \
             "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/.env"
 
       - name: Deploy over SSH
@@ -191,5 +171,5 @@ jobs:
           GHCR_USERNAME: ${{ secrets.PROD_GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.PROD_GHCR_TOKEN }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${PROD_PORT}" "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "${PROD_PORT}" "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" \
             "chmod 600 '${PROD_APP_DIR}/.env' && chmod +x '${PROD_APP_DIR}/deploy-prod-stack.sh' && GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' APP_DIR='${PROD_APP_DIR}' '${PROD_APP_DIR}/deploy-prod-stack.sh'"
