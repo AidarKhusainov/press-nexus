@@ -17,7 +17,6 @@ Repository or `production` environment secrets:
 - `PROD_SSH_USER` - SSH user on the production server
 - `PROD_HOST` - production server host or IP
 - `PROD_SSH_KEY` - private key for the production server
-- `PROD_SSH_FINGERPRINT` - SHA256 fingerprint of the production SSH host key
 - `PROD_GHCR_USERNAME` - GHCR username allowed to pull private images
 - `PROD_GHCR_TOKEN` - GHCR token with `read:packages`
 - `PRESS_DB_USER` - optional, defaults to `pressnexus`
@@ -48,7 +47,7 @@ The workflow uploads:
 into `/opt/press-nexus` and then runs the remote deploy script there.
 
 The GHCR credentials are not stored in `.env`; they are passed only to the deploy session.
-SSH steps run through `appleboy/scp-action@v1` and `appleboy/ssh-action@v1`, with server verification via `PROD_SSH_FINGERPRINT`.
+SSH steps run through `appleboy/scp-action@v1` and `appleboy/ssh-action@v1`.
 
 ## What The Deploy Does
 
@@ -71,4 +70,4 @@ SSH steps run through `appleboy/scp-action@v1` and `appleboy/ssh-action@v1`, wit
 
 - The workflow deploys the app stack itself. HTTPS ingress and Telegram webhook registration are still managed separately.
 - The generated `.env` contains application secrets, so the target directory should stay readable only by the deploy user or root.
-- To get the fingerprint secret value, run `ssh your-host ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub | cut -d ' ' -f2` on the server and store the resulting `SHA256:...` string in `PROD_SSH_FINGERPRINT`.
+- SSH host verification is disabled for the GitHub Actions deploy workflow.

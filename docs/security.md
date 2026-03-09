@@ -8,6 +8,7 @@
 - Least privilege for DB and external APIs.
 - Internal operational endpoints must be protected with `X-PressNexus-Api-Key` when `press.security.internal-api.enabled=true`.
 - Telegram webhook ingress should validate `X-Telegram-Bot-Api-Secret-Token`.
+- Production CD currently authenticates to the server with `PROD_SSH_KEY` and does not verify the SSH host identity in GitHub Actions.
 
 ## Dependency Hygiene
 

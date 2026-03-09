@@ -152,7 +152,6 @@ jobs:
           username: ${{ secrets.PROD_SSH_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: ${{ secrets.PROD_PORT }}
-          fingerprint: ${{ secrets.PROD_SSH_FINGERPRINT }}
           script: mkdir -p '${{ env.PROD_APP_DIR }}'
 
       - name: Upload deployment bundle
@@ -162,7 +161,6 @@ jobs:
           username: ${{ secrets.PROD_SSH_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: ${{ secrets.PROD_PORT }}
-          fingerprint: ${{ secrets.PROD_SSH_FINGERPRINT }}
           source: .deploy/deploy-bundle.tar
           target: ${{ env.PROD_APP_DIR }}
           overwrite: true
@@ -177,7 +175,6 @@ jobs:
           username: ${{ secrets.PROD_SSH_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: ${{ secrets.PROD_PORT }}
-          fingerprint: ${{ secrets.PROD_SSH_FINGERPRINT }}
           envs: GHCR_USERNAME,GHCR_TOKEN
           script: |
             tar -C '${{ env.PROD_APP_DIR }}' -xf '${{ env.PROD_APP_DIR }}/deploy-bundle.tar'
