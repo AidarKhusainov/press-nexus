@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PRESS_DB_USER:-pressnexus}
+      POSTGRES_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}
+      POSTGRES_DB: pressnexus
+    volumes:
+      - press-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PRESS_DB_USER:-pressnexus} -d pressnexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+      OLLAMA_NO_GPU: ${OLLAMA_NO_GPU:-1}
+      OMP_NUM_THREADS: ${OLLAMA_THREADS:-4}
+    volumes:
+      - press-ollama-data:/root/.ollama
+
+  app:
+    image: ${APP_IMAGE:?Set APP_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0}
+      LOG_DIR: /var/log/press-nexus
+      PRESS_DB_USER: ${PRESS_DB_USER:-pressnexus}
+      PRESS_DB_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}
+      PRESS_R2DBC_URL: ${PRESS_R2DBC_URL:-r2dbc:postgresql://postgres:5432/pressnexus}
+      PRESS_JDBC_URL: ${PRESS_JDBC_URL:-jdbc:postgresql://postgres:5432/pressnexus}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/}
+      PRESS_DELIVERY_TELEGRAM_ENABLED: ${PRESS_DELIVERY_TELEGRAM_ENABLED:-false}
+      PRESS_API_KEY: ${PRESS_API_KEY:?Set PRESS_API_KEY}
+      TELEGRAM_WEBHOOK_SECRET_TOKEN: ${TELEGRAM_WEBHOOK_SECRET_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY}
+      PRESS_OTLP_TRACING_ENABLED: ${PRESS_OTLP_TRACING_ENABLED:-false}
+      OTLP_TRACING_ENDPOINT: ${OTLP_TRACING_ENDPOINT:-http://otel-collector:4318/v1/traces}
+    volumes:
+      - press-app-logs:/var/log/press-nexus
+
+volumes:
+  press-postgres-data:
+  press-ollama-data:
+  press-app-logs:

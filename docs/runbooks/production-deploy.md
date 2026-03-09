@@ -34,6 +34,8 @@ export OTLP_TRACING_ENDPOINT='http://otel-collector:4318/v1/traces'
 docker build -t press-nexus:prod .
 ```
 
+GitHub Actions CD is available via [docs/runbooks/github-actions-production-cd.md](/home/aidar/work/Pets/press-nexus/docs/runbooks/github-actions-production-cd.md). Keep production host and SSH host key in GitHub secrets or environment secrets, not in the repository.
+
 ## Deploy Topology
 
 1. Run PostgreSQL with persistent storage and pgvector enabled.
@@ -45,6 +47,8 @@ docker build -t press-nexus:prod .
    - Telegram webhook path
    - health probes
 6. Keep internal/reporting endpoints behind reverse proxy restrictions and `X-PressNexus-Api-Key`.
+
+For a single-server rollout, the CD workflow uploads `deploy/docker-compose.prod.yml` to `/opt/press-nexus` and runs the stack there. If you already have reverse proxy on the server, keep `APP_BIND_ADDRESS=127.0.0.1`.
 
 ## Telegram Webhook
 
