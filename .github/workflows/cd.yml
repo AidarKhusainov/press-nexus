@@ -119,20 +119,6 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null
 
-      - name: Trust production host
-        env:
-          PROD_SSH_FINGERPRINT: ${{ secrets.PROD_SSH_FINGERPRINT }}
-        run: |
-          set -euo pipefail
-          ssh-keyscan -p "${PROD_PORT}" "${PROD_HOST}" > ~/.ssh/known_hosts.raw
-          if ! ssh-keygen -l -E sha256 -f ~/.ssh/known_hosts.raw | awk '{print $2}' | grep -Fxq "${PROD_SSH_FINGERPRINT}"; then
-            echo "Production SSH fingerprint mismatch" >&2
-            ssh-keygen -l -E sha256 -f ~/.ssh/known_hosts.raw >&2
-            exit 1
-          fi
-          ssh-keyscan -H -p "${PROD_PORT}" "${PROD_HOST}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
       - name: Create deploy bundle
         env:
           APP_IMAGE: ${{ steps.digest.outputs.ref }}
