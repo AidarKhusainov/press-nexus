@@ -2,13 +2,18 @@
 
 ## Goal
 
-Build the production image, push it to GHCR, and deploy it to the production server over SSH.
+Publish a production-ready container image in CI and deploy that exact image to the production server over SSH.
 
 ## Workflow
 
+- File: `.github/workflows/ci.yml`
+- Builds and verifies the app on every PR and branch push
+- Publishes `ghcr.io/<repo>:<full-commit-sha>` on successful pushes to `main` or `master`
+- Publishes `ghcr.io/<repo>:prod` on the default branch for convenience
 - File: `.github/workflows/cd.yml`
 - Triggered automatically after a successful `CI` workflow on `main` or `master`
 - Can also be started manually with `workflow_dispatch`
+- Resolves the immutable digest for the published `:<full-commit-sha>` image tag and deploys by digest
 
 ## Required GitHub Secrets
 
@@ -17,6 +22,7 @@ Repository or `production` environment secrets:
 - `PROD_SSH_USER` - SSH user on the production server
 - `PROD_HOST` - production server host or IP
 - `PROD_SSH_KEY` - private key for the production server
+- `PROD_SSH_FINGERPRINT` - expected SHA256 fingerprint of the production SSH host key
 - `PROD_GHCR_USERNAME` - GHCR username allowed to pull private images
 - `PROD_GHCR_TOKEN` - GHCR token with `read:packages`
 - `PRESS_DB_USER` - optional, defaults to `pressnexus`
@@ -47,27 +53,32 @@ The workflow uploads:
 into `/opt/press-nexus` and then runs the remote deploy script there.
 
 The GHCR credentials are not stored in `.env`; they are passed only to the deploy session.
-SSH steps run through `appleboy/scp-action@v1` and `appleboy/ssh-action@v1`.
+The CD workflow does not rebuild the app image. It deploys the image already published by CI.
+The SSH private key is normalized before use, so `PROD_SSH_KEY` may be stored as multiline PEM/OpenSSH text, escaped `\n`, or base64-encoded private key content.
+SSH host verification is enforced by checking the live host key fingerprint against `PROD_SSH_FINGERPRINT`.
 
 ## What The Deploy Does
 
-1. Logs into `ghcr.io` on the server.
-2. Starts PostgreSQL and Ollama.
-3. Pulls `nomic-embed-text` into Ollama.
-4. Pulls the new application image.
-5. Starts the app with the `prod` profile.
-6. Runs smoke checks against `localhost:$APP_PORT`.
+1. Resolves the immutable digest for the image published by CI.
+2. Uploads a deploy bundle containing `.env`, `docker-compose.prod.yml`, and `deploy-prod-stack.sh`.
+3. Logs into `ghcr.io` on the server.
+4. Starts PostgreSQL and Ollama.
+5. Pulls `nomic-embed-text` into Ollama.
+6. Pulls the new application image by digest.
+7. Starts the app with the `prod` profile.
+8. Runs smoke checks against `localhost:$APP_PORT`.
 
 ## Rollback
 
 1. SSH to the server.
 2. Run `docker login ghcr.io`.
 3. Open `/opt/press-nexus/.env`.
-4. Replace `APP_IMAGE` with the previous immutable GHCR image tag.
+4. Replace `APP_IMAGE` with the previous immutable GHCR image reference.
 5. Run `APP_DIR=/opt/press-nexus /opt/press-nexus/deploy-prod-stack.sh`.
 
 ## Notes
 
 - The workflow deploys the app stack itself. HTTPS ingress and Telegram webhook registration are still managed separately.
 - The generated `.env` contains application secrets, so the target directory should stay readable only by the deploy user or root.
-- SSH host verification is disabled for the GitHub Actions deploy workflow.
+- Put production secrets in the `production` environment when possible and protect that environment with required reviewers.
+- If the server SSH host key rotates, update `PROD_SSH_FINGERPRINT` before rerunning CD.

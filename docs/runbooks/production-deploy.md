@@ -34,7 +34,7 @@ export OTLP_TRACING_ENDPOINT='http://otel-collector:4318/v1/traces'
 docker build -t press-nexus:prod .
 ```
 
-GitHub Actions CD is available via [docs/runbooks/github-actions-production-cd.md](/home/aidar/work/Pets/press-nexus/docs/runbooks/github-actions-production-cd.md). Keep production host and SSH host key in GitHub secrets or environment secrets, not in the repository.
+Local build remains useful for manual validation. In normal operation, GitHub Actions CI builds and publishes the production image, and GitHub Actions CD deploys that published image without rebuilding it. See [docs/runbooks/github-actions-production-cd.md](/home/aidar/work/Pets/press-nexus/docs/runbooks/github-actions-production-cd.md). Keep production host, SSH key, and SSH fingerprint in GitHub secrets or environment secrets, not in the repository.
 
 ## Deploy Topology
 
