@@ -10,6 +10,7 @@ import io.r2dbc.spi.ConnectionFactories;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -43,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @EnabledIfSystemProperty(named = "db.tests", matches = "true")
 class NewsPipelineIntegrationTest {
 
+	private static final String SQL_STATE_INVALID_CATALOG_NAME = "3D000";
 	private static final String TEST_DB_USER = System.getenv().getOrDefault("PRESS_TEST_DB_USER", "pressnexus");
 	private static final String TEST_DB_PASSWORD = System.getenv().getOrDefault("PRESS_TEST_DB_PASSWORD", "");
 	private static final String TEST_DB_NAME = System.getenv().getOrDefault("PRESS_TEST_DB_NAME", "pressnexus_test");
@@ -152,7 +154,9 @@ class NewsPipelineIntegrationTest {
 			}
 
 			validateDatabaseName();
-			createDatabaseIfMissing();
+			if (!databaseExists()) {
+				createDatabaseIfMissing();
+			}
 			applyMigrations();
 			testDatabaseReady = true;
 		}
@@ -179,6 +183,17 @@ class NewsPipelineIntegrationTest {
 			try (var statement = connection.createStatement()) {
 				statement.execute("CREATE DATABASE " + TEST_DB_NAME);
 			}
+		}
+	}
+
+	private static boolean databaseExists() throws Exception {
+		try (var ignored = DriverManager.getConnection(TEST_JDBC_URL, TEST_DB_USER, TEST_DB_PASSWORD)) {
+			return true;
+		} catch (SQLException ex) {
+			if (SQL_STATE_INVALID_CATALOG_NAME.equals(ex.getSQLState())) {
+				return false;
+			}
+			throw ex;
 		}
 	}
 
