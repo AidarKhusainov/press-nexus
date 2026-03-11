@@ -30,3 +30,7 @@ ruler:
 
 analytics:
   reporting_enabled: false
+
+limits_config:
+  ingestion_rate_mb: 16
+  ingestion_burst_size_mb: 32

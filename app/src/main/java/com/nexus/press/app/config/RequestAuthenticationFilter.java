@@ -29,8 +29,6 @@ public class RequestAuthenticationFilter implements WebFilter {
 	private static final String CLUSTERS_PATH = "/api/clusters";
 	private static final String TELEGRAM_WEBHOOK_PATH = "/api/telegram/webhook";
 	private static final String ACTUATOR_INFO_PATH = "/actuator/info";
-	private static final String ACTUATOR_METRICS_PREFIX = "/actuator/metrics";
-	private static final String ACTUATOR_PROMETHEUS_PATH = "/actuator/prometheus";
 
 	private final InternalApiSecurityProperties internalApiSecurityProperties;
 	private final TelegramWebhookSecurityProperties telegramWebhookSecurityProperties;
@@ -98,10 +96,7 @@ public class RequestAuthenticationFilter implements WebFilter {
 			|| path.startsWith(PRODUCT_REPORT_PREFIX)
 			|| path.startsWith(NEWS_INTERNAL_PREFIX)
 			|| CLUSTERS_PATH.equals(path)
-			|| ACTUATOR_INFO_PATH.equals(path)
-			|| ACTUATOR_PROMETHEUS_PATH.equals(path)
-			|| path.equals(ACTUATOR_METRICS_PREFIX)
-			|| path.startsWith(ACTUATOR_METRICS_PREFIX + "/");
+			|| ACTUATOR_INFO_PATH.equals(path);
 	}
 
 	private boolean secureEquals(final String expected, final String actual) {

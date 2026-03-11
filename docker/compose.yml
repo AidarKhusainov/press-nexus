@@ -250,4 +250,3 @@ networks:
   backend:
     internal: true
   monitoring:
-    internal: true

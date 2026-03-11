@@ -7,6 +7,7 @@
 - Mask sensitive data in logs.
 - Least privilege for DB and external APIs.
 - Internal operational endpoints must be protected with `X-PressNexus-Api-Key` when `press.security.internal-api.enabled=true`.
+- Prometheus scrape endpoints are allowed without API key, but must stay reachable only on loopback/tunneled monitoring ports and the internal monitoring network.
 - Telegram webhook ingress should validate `X-Telegram-Bot-Api-Secret-Token`.
 - Production CD authenticates with `PROD_SSH_KEY`.
 - Production CD passes deploy-time application secrets from GitHub Actions to the remote `docker compose` command instead of storing a persistent `.env` on the server.

@@ -14,8 +14,9 @@ Use GitHub Actions CD for normal production rollouts.
 - CI also publishes `ghcr.io/<repo>:prod` on `master`
 - CD runs automatically after successful `CI` on `master`
 - CD can also be started manually with `workflow_dispatch`
-- CD uploads `docker/compose.prod.yml` to `/opt/press-nexus`
+- CD uploads `docker/compose.prod.yml` and `monitoring/**` to `/opt/press-nexus`
 - CD logs into GHCR on the server and runs `docker compose pull/up`
+- CD starts Prometheus, Grafana, Loki, and Promtail together with the app stack
 
 ### Required GitHub Secrets
 
@@ -27,6 +28,7 @@ Use GitHub Actions CD for normal production rollouts.
 - `PRESS_DB_PASSWORD`
 - `PRESS_API_KEY`
 - `GEMINI_API_KEY`
+- `GRAFANA_ADMIN_PASSWORD`
 - `TELEGRAM_WEBHOOK_SECRET_TOKEN` - optional if webhook is enabled
 - `TELEGRAM_BOT_TOKEN` - optional if Telegram delivery is enabled
 
@@ -45,6 +47,13 @@ Use GitHub Actions CD for normal production rollouts.
 - `OTLP_TRACING_ENDPOINT`
 - `POSTGRES_IMAGE`
 - `OLLAMA_IMAGE`
+- `PROMETHEUS_BIND_ADDRESS` - defaults to `127.0.0.1`
+- `PROMETHEUS_PORT` - defaults to `9090`
+- `GRAFANA_BIND_ADDRESS` - defaults to `127.0.0.1`
+- `GRAFANA_PORT` - defaults to `3000`
+- `GRAFANA_ADMIN_USER` - defaults to `admin`
+- `LOKI_BIND_ADDRESS` - defaults to `127.0.0.1`
+- `LOKI_PORT` - defaults to `3100`
 
 ## Server Prerequisites
 
@@ -69,6 +78,7 @@ Use GitHub Actions CD for normal production rollouts.
 
 For a single-server rollout, keep `APP_BIND_ADDRESS=127.0.0.1` when a reverse proxy is installed.
 Keep PostgreSQL on the internal backend network only. The app, Ollama, and `ollama-model-init` must also join an egress-capable network; otherwise `ollama-model-init` cannot fetch `nomic-embed-text`, and the `app` service will stay in `Created` because it depends on that init job succeeding.
+Monitoring ports should also stay on loopback and be accessed through SSH tunnel.
 
 ## Manual Fallback
 
@@ -76,7 +86,7 @@ If GitHub Actions is unavailable, export the required runtime variables in the s
 
 ```bash
 docker compose -f docker/compose.prod.yml pull app
-docker compose -f docker/compose.prod.yml up -d app
+docker compose -f docker/compose.prod.yml up -d app prometheus grafana loki promtail
 ```
 
 ## Rollback
@@ -124,6 +134,30 @@ curl -sS \
   -H "X-PressNexus-Api-Key: $PRESS_API_KEY" \
   "https://<host>/api/brief/daily/send"
 ```
+
+## Monitoring Access
+
+After deploy, tunnel monitoring ports from your machine:
+
+```bash
+ssh -Nf \
+  -L 3000:127.0.0.1:3000 \
+  -L 9090:127.0.0.1:9090 \
+  -L 3100:127.0.0.1:3100 \
+  <user>@<host> -p <port>
+```
+
+Then open:
+
+- Grafana: `http://127.0.0.1:3000`
+- Prometheus: `http://127.0.0.1:9090`
+- Loki API: `http://127.0.0.1:3100`
+
+Grafana dashboards are provisioned automatically:
+
+- `Press Nexus Overview`
+- `Press Nexus Logs`
+- `Press Nexus Product Analytics`
 
 ## Notes
 
