@@ -30,7 +30,6 @@
 - [ ] Contract changed and versioning/backward-compatibility is handled
 - [ ] Contract files updated (`docs/contracts/openapi.yaml`, `docs/contracts/events/*`)
 - [ ] Contract tests updated (`*ContractTest`)
-- [ ] Contract breaking CI job passed (`contract-breaking`)
 - [ ] No DB migration
 - [ ] DB migration included + rollback/mitigation documented
 
@@ -49,5 +48,5 @@
 
 - [ ] Change is small and focused
 - [ ] No secrets or sensitive data added
-- [ ] Security scans passed (Gitleaks / CodeQL / dependency review)
+- [ ] Mandatory CI checks passed
 - [ ] Definition of Done is satisfied

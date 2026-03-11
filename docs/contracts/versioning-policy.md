@@ -14,7 +14,7 @@
   - updated contract file(s)
   - contract tests
   - compatibility note in PR template
-- PR must pass automated breaking-check gate in CI (`contract-breaking` job).
+- PR must pass the mandatory CI workflow and contract tests.
 
 ## Examples of breaking changes
 

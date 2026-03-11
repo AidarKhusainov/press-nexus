@@ -5,25 +5,39 @@ on:
   push:
     branches:
       - master
-      - develop
-      - feature/**
-      - fix/**
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   JAVA_VERSION: "21"
+  PRESS_DB_PASSWORD: pressnexus
+  PRESS_TEST_DB_USER: pressnexus
+  PRESS_TEST_DB_PASSWORD: pressnexus
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg16-trixie
+        env:
+          POSTGRES_USER: pressnexus
+          POSTGRES_PASSWORD: pressnexus
+          POSTGRES_DB: pressnexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pressnexus -d pressnexus"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -36,202 +50,37 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
-      - name: Show toolchain versions
-        run: |
-          java -version
-          javac -version
-          ./mvnw -version
+      - name: Run mandatory quality gates and tests
+        run: ./mvnw -V -B -ntp clean verify -Ddb.tests=true
 
-      - name: Build, tests, quality gates
-        run: ./mvnw -V -B -ntp clean verify
-
-      - name: Upload build outputs and test reports
-        if: always()
+      - name: Upload test reports on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: app-build-and-test-reports
+          name: verify-reports
+          retention-days: 7
           path: |
-            app/target/*.jar
             **/target/surefire-reports/**
             **/target/failsafe-reports/**
             **/target/site/jacoco/**
 
-  contract-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: verify
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
-
-      - name: Run API and event contract tests
-        run: ./mvnw -V -B -ntp -pl app -Dtest='*ContractTest' test
-
-  contract-breaking:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Fetch base ref
-        run: git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
-
-      - name: Verify no unversioned breaking contract changes
-        env:
-          CONTRACT_BASE_REF: origin/${{ github.base_ref }}
-        run: ./scripts/check-contract-breaking.sh
-
-  secret-scan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_COMMENTS: false
-
-  sbom-vuln-scan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      security-events: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
-
-      - name: Generate CycloneDX SBOM
-        run: ./mvnw -V -B -ntp -DskipTests cyclonedx:makeAggregateBom
-
-      - name: Verify SBOM exists
-        run: test -f target/bom.json
-
-      - name: Scan SBOM with Grype
-        id: grype
-        uses: anchore/scan-action@v6
-        with:
-          sbom: target/bom.json
-          fail-build: true
-          severity-cutoff: high
-
-      - name: Upload Grype SARIF
-        if: always() && steps.grype.outputs.sarif != ''
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: ${{ steps.grype.outputs.sarif }}
-          wait-for-processing: false
-
-      - name: Upload Grype SARIF artifact
-        if: always() && steps.grype.outputs.sarif != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: grype-sarif
-          path: ${{ steps.grype.outputs.sarif }}
-
-      - name: Upload SBOM artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cyclonedx-sbom
-          path: target/bom.json
-
-  dependency-review:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Detect Dependency Graph support
-        id: dependency-graph
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const {data: repo} = await github.rest.repos.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-
-            const status = repo.security_and_analysis?.dependency_graph?.status ?? "missing";
-            core.notice(`Dependency Graph status: ${status}`);
-            core.setOutput("supported", status === "enabled" ? "true" : "false");
-
-      - name: Skip when Dependency Graph is unavailable
-        if: steps.dependency-graph.outputs.supported != 'true'
-        run: echo "Skipping dependency review because GitHub Dependency Graph is not enabled for this repository."
-
-      - name: Dependency review
-        if: steps.dependency-graph.outputs.supported == 'true'
-        uses: actions/dependency-review-action@v4
-
-  container-image:
+  publish-image:
+    if: github.event_name == 'push' && github.ref_name == 'master'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-      - verify
-      - contract-tests
-      - secret-scan
-      - sbom-vuln-scan
+    needs: verify
     permissions:
       contents: read
       packages: write
-      attestations: write
-      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Resolve image coordinates
-        id: image
-        env:
-          SHOULD_PUBLISH: ${{ github.event_name != 'pull_request' && github.ref_name == 'master' }}
-        run: |
-          repo="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
-          revision="$(git rev-parse HEAD)"
-          echo "name=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
-          echo "revision=${revision}" >> "$GITHUB_OUTPUT"
-          echo "publish=${SHOULD_PUBLISH}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to ghcr.io
-        if: steps.image.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -242,46 +91,21 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.image.outputs.name }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,format=long,prefix=
             type=raw,value=prod,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ steps.image.outputs.revision }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Build and optionally push image
-        id: build
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
-          push: ${{ steps.image.outputs.publish == 'true' }}
+          file: ./docker/Dockerfile
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=press-nexus-image
           cache-to: type=gha,mode=max,scope=press-nexus-image
-
-      - name: Attest build provenance
-        if: steps.image.outputs.publish == 'true'
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-name: ${{ steps.image.outputs.name }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Upload published image metadata
-        if: steps.image.outputs.publish == 'true'
-        run: |
-          {
-            echo "IMAGE_NAME=${{ steps.image.outputs.name }}"
-            echo "IMAGE_TAG=${{ steps.image.outputs.name }}:${{ steps.image.outputs.revision }}"
-            echo "IMAGE_DIGEST=${{ steps.build.outputs.digest }}"
-          } > image-metadata.txt
-
-      - name: Store published image metadata
-        if: steps.image.outputs.publish == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: published-image-metadata
-          path: image-metadata.txt

@@ -8,187 +8,94 @@ on:
       - completed
   workflow_dispatch:
     inputs:
-      ref:
-        description: Git ref or commit SHA to deploy
+      image_tag:
+        description: Image tag to deploy manually
         required: false
-        default: master
+        default: prod
 
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 env:
-  PROD_HOST: ${{ secrets.PROD_HOST }}
-  PROD_PORT: ${{ secrets.PROD_PORT }}
   PROD_APP_DIR: /opt/press-nexus
+  DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.event.workflow_run.head_sha }}
+  DEPLOY_IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || github.event.workflow_run.head_sha }}
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      ref: ${{ steps.vars.outputs.ref }}
+  deploy-production:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_branch == 'master'
-
       )
-    steps:
-      - name: Resolve ref
-        id: vars
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
-          fi
-
-  deploy-production:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: prepare
     environment: production
-    permissions:
-      contents: read
-      packages: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.prepare.outputs.ref }}
+          ref: ${{ env.DEPLOY_REF }}
 
-      - name: Resolve image coordinates
+      - name: Resolve image reference
         id: image
-        run: |
-          repo="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
-          revision="$(git rev-parse HEAD)"
-          echo "name=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
-          echo "tag=ghcr.io/${repo}:${revision}" >> "$GITHUB_OUTPUT"
-          echo "revision=${revision}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/metadata-action@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ env.DEPLOY_IMAGE_TAG }}
 
-      - name: Resolve immutable image digest
-        id: digest
-        run: |
-          digest="$(docker buildx imagetools inspect '${{ steps.image.outputs.tag }}' --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          if [[ -z "${digest}" ]]; then
-            echo "Failed to resolve digest for ${{ steps.image.outputs.tag }}" >&2
-            exit 1
-          fi
-          echo "value=${digest}" >> "$GITHUB_OUTPUT"
-          echo "ref=${{ steps.image.outputs.name }}@${digest}" >> "$GITHUB_OUTPUT"
+      - name: Upload production compose file
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT }}
+          source: docker/compose.prod.yml
+          target: ${{ env.PROD_APP_DIR }}
+          strip_components: 1
 
-      - name: Prepare SSH key
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.4
         env:
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          raw_key="${PROD_SSH_KEY}"
-          if [[ "${raw_key}" != *$'\n'* && "${raw_key}" == *"\\n"* ]]; then
-            raw_key="$(printf '%b' "${raw_key}")"
-          fi
-          raw_key="$(printf '%s' "${raw_key}" | tr -d '\r')"
-
-          if [[ "${raw_key}" != *"BEGIN OPENSSH PRIVATE KEY"* && "${raw_key}" != *"BEGIN RSA PRIVATE KEY"* && "${raw_key}" != *"BEGIN EC PRIVATE KEY"* && "${raw_key}" != *"BEGIN PRIVATE KEY"* ]]; then
-            decoded_key="$(printf '%s' "${raw_key}" | base64 -d 2>/dev/null || true)"
-            if [[ -n "${decoded_key}" ]]; then
-              raw_key="$(printf '%s' "${decoded_key}" | tr -d '\r')"
-            fi
-          fi
-
-          printf '%s\n' "${raw_key}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null
-
-      - name: Trust production host
-        env:
-          PROD_SSH_FINGERPRINT: ${{ secrets.PROD_SSH_FINGERPRINT }}
-        run: |
-          set -euo pipefail
-          ssh-keyscan -p "${PROD_PORT}" "${PROD_HOST}" > ~/.ssh/known_hosts.raw
-          if ! ssh-keygen -l -E sha256 -f ~/.ssh/known_hosts.raw | awk '{print $2}' | grep -Fxq "${PROD_SSH_FINGERPRINT}"; then
-            echo "Production SSH fingerprint mismatch" >&2
-            ssh-keygen -l -E sha256 -f ~/.ssh/known_hosts.raw >&2
-            exit 1
-          fi
-          ssh-keyscan -H -p "${PROD_PORT}" "${PROD_HOST}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Create deploy bundle
-        env:
-          APP_IMAGE: ${{ steps.digest.outputs.ref }}
-          PRESS_DB_USER: ${{ secrets.PRESS_DB_USER }}
+          APP_IMAGE: ${{ steps.image.outputs.tags }}
+          SPRING_PROFILES_ACTIVE: prod
+          PRESS_DB_USER: ${{ vars.PRESS_DB_USER || 'pressnexus' }}
           PRESS_DB_PASSWORD: ${{ secrets.PRESS_DB_PASSWORD }}
           PRESS_API_KEY: ${{ secrets.PRESS_API_KEY }}
           TELEGRAM_WEBHOOK_SECRET_TOKEN: ${{ secrets.TELEGRAM_WEBHOOK_SECRET_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PRESS_DELIVERY_TELEGRAM_ENABLED: ${{ secrets.PRESS_DELIVERY_TELEGRAM_ENABLED }}
-          APP_BIND_ADDRESS: ${{ secrets.APP_BIND_ADDRESS }}
-          APP_PORT: ${{ secrets.APP_PORT }}
-          OLLAMA_THREADS: ${{ secrets.OLLAMA_THREADS }}
-          JAVA_TOOL_OPTIONS: ${{ secrets.JAVA_TOOL_OPTIONS }}
-        run: |
-          umask 077
-          mkdir -p .deploy
-          cat > .deploy/.env <<EOF
-          APP_IMAGE=${APP_IMAGE}
-          SPRING_PROFILES_ACTIVE=prod
-          PRESS_DB_USER=${PRESS_DB_USER:-pressnexus}
-          PRESS_DB_PASSWORD=${PRESS_DB_PASSWORD}
-          PRESS_API_KEY=${PRESS_API_KEY}
-          TELEGRAM_WEBHOOK_SECRET_TOKEN=${TELEGRAM_WEBHOOK_SECRET_TOKEN}
-          TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-          GEMINI_API_KEY=${GEMINI_API_KEY}
-          PRESS_DELIVERY_TELEGRAM_ENABLED=${PRESS_DELIVERY_TELEGRAM_ENABLED:-false}
-          PRESS_OTLP_TRACING_ENABLED=false
-          OLLAMA_THREADS=${OLLAMA_THREADS:-4}
-          APP_BIND_ADDRESS=${APP_BIND_ADDRESS:-127.0.0.1}
-          APP_PORT=${APP_PORT:-8080}
-          JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0}
-          EOF
-          cp deploy/docker-compose.prod.yml .deploy/docker-compose.prod.yml
-          cp scripts/deploy-prod-stack.sh .deploy/deploy-prod-stack.sh
-          tar -C .deploy -cf .deploy/deploy-bundle.tar .env docker-compose.prod.yml deploy-prod-stack.sh
-
-      - name: Ensure target directory exists
-        run: |
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -p "${PROD_PORT}" \
-            "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" "mkdir -p '${PROD_APP_DIR}'"
-
-      - name: Upload deployment bundle
-        run: |
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -P "${PROD_PORT}" \
-            .deploy/deploy-bundle.tar "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}:${PROD_APP_DIR}/deploy-bundle.tar"
-
-      - name: Deploy over SSH
-        env:
-          GHCR_USERNAME: ${{ secrets.PROD_GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.PROD_GHCR_TOKEN }}
-        run: |
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -p "${PROD_PORT}" \
-            "${{ secrets.PROD_SSH_USER }}@${PROD_HOST}" \
-            "tar -C '${PROD_APP_DIR}' -xf '${PROD_APP_DIR}/deploy-bundle.tar' && \
-            rm -f '${PROD_APP_DIR}/deploy-bundle.tar' && \
-            chmod 600 '${PROD_APP_DIR}/.env' && \
-            chmod +x '${PROD_APP_DIR}/deploy-prod-stack.sh' && \
-            APP_DIR='${PROD_APP_DIR}' GHCR_USERNAME=\"${GHCR_USERNAME}\" GHCR_TOKEN=\"${GHCR_TOKEN}\" '${PROD_APP_DIR}/deploy-prod-stack.sh'"
+          PRESS_DELIVERY_TELEGRAM_ENABLED: ${{ vars.PRESS_DELIVERY_TELEGRAM_ENABLED || 'false' }}
+          PRESS_OTLP_TRACING_ENABLED: ${{ vars.PRESS_OTLP_TRACING_ENABLED || 'false' }}
+          APP_BIND_ADDRESS: ${{ vars.APP_BIND_ADDRESS || '127.0.0.1' }}
+          APP_PORT: ${{ vars.APP_PORT || '8080' }}
+          OLLAMA_THREADS: ${{ vars.OLLAMA_THREADS || '4' }}
+          JAVA_TOOL_OPTIONS: ${{ vars.JAVA_TOOL_OPTIONS || '-XX:MaxRAMPercentage=75.0' }}
+          PRESS_R2DBC_URL: ${{ vars.PRESS_R2DBC_URL }}
+          PRESS_JDBC_URL: ${{ vars.PRESS_JDBC_URL }}
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL }}
+          OTLP_TRACING_ENDPOINT: ${{ vars.OTLP_TRACING_ENDPOINT }}
+          POSTGRES_IMAGE: ${{ vars.POSTGRES_IMAGE }}
+          OLLAMA_IMAGE: ${{ vars.OLLAMA_IMAGE }}
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT }}
+          envs: PROD_APP_DIR,APP_IMAGE,SPRING_PROFILES_ACTIVE,PRESS_DB_USER,PRESS_DB_PASSWORD,PRESS_API_KEY,TELEGRAM_WEBHOOK_SECRET_TOKEN,TELEGRAM_BOT_TOKEN,GEMINI_API_KEY,PRESS_DELIVERY_TELEGRAM_ENABLED,PRESS_OTLP_TRACING_ENABLED,APP_BIND_ADDRESS,APP_PORT,OLLAMA_THREADS,JAVA_TOOL_OPTIONS,PRESS_R2DBC_URL,PRESS_JDBC_URL,OLLAMA_BASE_URL,OTLP_TRACING_ENDPOINT,POSTGRES_IMAGE,OLLAMA_IMAGE
+          script: |
+            set -e
+            cd "${PROD_APP_DIR}"
+            echo "${{ secrets.PROD_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.PROD_GHCR_USERNAME }}" --password-stdin
+            docker compose -f compose.prod.yml pull app
+            docker compose -f compose.prod.yml up -d app
+            docker compose -f compose.prod.yml ps

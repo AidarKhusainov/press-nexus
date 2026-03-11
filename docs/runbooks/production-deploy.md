@@ -2,45 +2,56 @@
 
 ## Goal
 
-Deploy Press Nexus on a real server with protected ingress, externalized config, and reproducible smoke checks.
+Deploy Press Nexus on a real server with Docker Compose and protected ingress.
 
-## Required Environment
+## Preferred Path
 
-```bash
-export SPRING_PROFILES_ACTIVE=prod
-export PRESS_DB_PASSWORD='<set-db-password>'
-export PRESS_API_KEY='<set-internal-api-key>'
-export TELEGRAM_WEBHOOK_SECRET_TOKEN='<set-webhook-secret>'
-export TELEGRAM_BOT_TOKEN='<set-telegram-bot-token>'
-export GEMINI_API_KEY='<set-gemini-api-key>'
-export OLLAMA_BASE_URL='http://ollama:11434/'
-```
+Use GitHub Actions CD for normal production rollouts.
 
-Optional:
+## GitHub Actions CD
 
-```bash
-export PRESS_R2DBC_URL='r2dbc:postgresql://postgres:5432/pressnexus'
-export PRESS_JDBC_URL='jdbc:postgresql://postgres:5432/pressnexus'
-export PRESS_DB_USER='pressnexus'
-export PRESS_DELIVERY_TELEGRAM_ENABLED='false'
-export PRESS_OTLP_TRACING_ENABLED='false'
-export OTLP_TRACING_ENDPOINT='http://otel-collector:4318/v1/traces'
-export POSTGRES_IMAGE='pgvector/pgvector:0.8.2-pg16-trixie'
-export OLLAMA_IMAGE='ollama/ollama:0.17.5'
-export APP_CPUS='1.0'
-export APP_MEMORY='1g'
-export APP_BIND_ADDRESS='127.0.0.1'
-```
+- CI publishes `ghcr.io/<repo>:<full-commit-sha>` on successful pushes to `master`
+- CI also publishes `ghcr.io/<repo>:prod` on `master`
+- CD runs automatically after successful `CI` on `master`
+- CD can also be started manually with `workflow_dispatch`
+- CD uploads `docker/compose.prod.yml` to `/opt/press-nexus`
+- CD logs into GHCR on the server and runs `docker compose pull/up`
 
-## Build
+### Required GitHub Secrets
 
-```bash
-./mvnw -B -ntp clean verify
-docker build -f docker/Dockerfile -t press-nexus:prod .
-```
+- `PROD_SSH_USER`
+- `PROD_HOST`
+- `PROD_SSH_KEY`
+- `PROD_GHCR_USERNAME`
+- `PROD_GHCR_TOKEN`
+- `PRESS_DB_PASSWORD`
+- `PRESS_API_KEY`
+- `GEMINI_API_KEY`
+- `TELEGRAM_WEBHOOK_SECRET_TOKEN` - optional if webhook is enabled
+- `TELEGRAM_BOT_TOKEN` - optional if Telegram delivery is enabled
 
-Local build remains useful for manual validation. In normal operation, GitHub Actions CI builds and publishes the production image, and GitHub Actions CD deploys that published image without rebuilding it. See [docs/runbooks/github-actions-production-cd.md](/home/aidar/work/Pets/press-nexus/docs/runbooks/github-actions-production-cd.md). Keep production host, SSH key, and SSH fingerprint in GitHub secrets or environment secrets, not in the repository.
-The production compose stack expects secrets to arrive from `.env` or the host environment and keeps the app container on a read-only root filesystem with a dedicated log volume and an internal-only backend network.
+### Optional GitHub Variables
+
+- `PRESS_DB_USER` - defaults to `pressnexus`
+- `PRESS_DELIVERY_TELEGRAM_ENABLED` - defaults to `false`
+- `PRESS_OTLP_TRACING_ENABLED` - defaults to `false`
+- `APP_BIND_ADDRESS` - defaults to `127.0.0.1`
+- `APP_PORT` - defaults to `8080`
+- `OLLAMA_THREADS` - defaults to `4`
+- `JAVA_TOOL_OPTIONS` - defaults to `-XX:MaxRAMPercentage=75.0`
+- `PRESS_R2DBC_URL`
+- `PRESS_JDBC_URL`
+- `OLLAMA_BASE_URL`
+- `OTLP_TRACING_ENDPOINT`
+- `POSTGRES_IMAGE`
+- `OLLAMA_IMAGE`
+
+## Server Prerequisites
+
+- Docker Engine
+- Docker Compose plugin or `docker-compose`
+- reverse proxy or other HTTPS ingress in front of the app
+- persistent storage for PostgreSQL data and Ollama models
 
 ## Deploy Topology
 
@@ -55,7 +66,31 @@ The production compose stack expects secrets to arrive from `.env` or the host e
 6. Keep internal/reporting endpoints behind reverse proxy restrictions and `X-PressNexus-Api-Key`.
 7. Keep published ports bound to loopback unless a reverse proxy or ingress explicitly needs wider exposure.
 
-For a single-server rollout, the CD workflow uploads `docker/compose.prod.yml` to `/opt/press-nexus` and runs the stack there. If you already have reverse proxy on the server, keep `APP_BIND_ADDRESS=127.0.0.1`.
+For a single-server rollout, keep `APP_BIND_ADDRESS=127.0.0.1` when a reverse proxy is installed.
+
+## Manual Fallback
+
+If GitHub Actions is unavailable, export the required runtime variables in the shell and run:
+
+```bash
+docker compose -f docker/compose.prod.yml pull app
+docker compose -f docker/compose.prod.yml up -d app
+```
+
+## Rollback
+
+### Preferred Rollback
+
+1. Trigger `workflow_dispatch`.
+2. Provide the previous image tag in `image_tag`.
+3. Run the deploy again.
+
+### Manual Rollback
+
+1. Disable delivery with `PRESS_DELIVERY_TELEGRAM_ENABLED=false`.
+2. Revert app image/version.
+3. Rotate `PRESS_API_KEY` and `TELEGRAM_WEBHOOK_SECRET_TOKEN` if ingress exposure is suspected.
+4. Keep DB schema changes backward-compatible before rollback.
 
 ## Telegram Webhook
 
@@ -67,27 +102,19 @@ Expected app-side header:
 
 ## Smoke Checks
 
-Health:
-
 ```bash
 curl -sS https://<host>/actuator/health
 ```
 
-Public brief preview:
-
 ```bash
 curl -sS "https://<host>/api/brief/daily/text?hours=24&limit=3&lang=ru"
 ```
-
-Protected report endpoint:
 
 ```bash
 curl -sS \
   -H "X-PressNexus-Api-Key: $PRESS_API_KEY" \
   "https://<host>/api/analytics/product-report/daily?date=YYYY-MM-DD"
 ```
-
-Protected send-now endpoint:
 
 ```bash
 curl -sS \
@@ -96,9 +123,8 @@ curl -sS \
   "https://<host>/api/brief/daily/send"
 ```
 
-## Rollback
+## Notes
 
-1. Disable delivery with `PRESS_DELIVERY_TELEGRAM_ENABLED=false`.
-2. Revert app image/version.
-3. Rotate `PRESS_API_KEY` and `TELEGRAM_WEBHOOK_SECRET_TOKEN` if ingress exposure is suspected.
-4. Keep DB schema changes backward-compatible before rollback.
+- Secrets live in GitHub Actions and are passed only for the deploy command.
+- The workflow deploys the app stack itself; ingress and Telegram webhook management stay outside this workflow.
+- The current CD flow intentionally skips SSH host verification and post-deploy smoke checks.

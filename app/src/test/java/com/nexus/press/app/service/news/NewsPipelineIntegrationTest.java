@@ -1,7 +1,15 @@
 package com.nexus.press.app.service.news;
 
+import liquibase.Contexts;
+import liquibase.LabelExpression;
+import liquibase.Liquibase;
+import liquibase.database.DatabaseFactory;
+import liquibase.database.jvm.JdbcConnection;
+import liquibase.resource.DirectoryResourceAccessor;
 import io.r2dbc.spi.ConnectionFactories;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.file.Path;
+import java.sql.DriverManager;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -37,14 +45,23 @@ class NewsPipelineIntegrationTest {
 
 	private static final String TEST_DB_USER = System.getenv().getOrDefault("PRESS_TEST_DB_USER", "pressnexus");
 	private static final String TEST_DB_PASSWORD = System.getenv().getOrDefault("PRESS_TEST_DB_PASSWORD", "");
+	private static final String TEST_DB_NAME = System.getenv().getOrDefault("PRESS_TEST_DB_NAME", "pressnexus_test");
 	private static final String TEST_DB_URL =
-		"r2dbc:postgresql://%s:%s@localhost:5432/pressnexus_test".formatted(TEST_DB_USER, TEST_DB_PASSWORD);
+		"r2dbc:postgresql://%s:%s@localhost:5432/%s".formatted(TEST_DB_USER, TEST_DB_PASSWORD, TEST_DB_NAME);
+	private static final String TEST_JDBC_ADMIN_URL =
+		"jdbc:postgresql://localhost:5432/postgres";
+	private static final String TEST_JDBC_URL =
+		"jdbc:postgresql://localhost:5432/%s".formatted(TEST_DB_NAME);
 	private static final AppMetrics APP_METRICS = new AppMetrics(new SimpleMeterRegistry());
+	private static final Object DB_INIT_LOCK = new Object();
+
+	private static volatile boolean testDatabaseReady;
 
 	private DatabaseClient db;
 
 	@BeforeEach
-	void setUp() {
+	void setUp() throws Exception {
+		ensureTestDatabaseReady();
 		db = DatabaseClient.create(ConnectionFactories.get(TEST_DB_URL));
 		resetNewsTable();
 	}
@@ -122,6 +139,76 @@ class NewsPipelineIntegrationTest {
 			.fetch()
 			.rowsUpdated()
 			.block(Duration.ofSeconds(5));
+	}
+
+	private static void ensureTestDatabaseReady() throws Exception {
+		if (testDatabaseReady) {
+			return;
+		}
+
+		synchronized (DB_INIT_LOCK) {
+			if (testDatabaseReady) {
+				return;
+			}
+
+			validateDatabaseName();
+			createDatabaseIfMissing();
+			applyMigrations();
+			testDatabaseReady = true;
+		}
+	}
+
+	private static void validateDatabaseName() {
+		if (!TEST_DB_NAME.matches("[A-Za-z0-9_]+")) {
+			throw new IllegalStateException("Unsupported test database name: " + TEST_DB_NAME);
+		}
+	}
+
+	private static void createDatabaseIfMissing() throws Exception {
+		try (
+			var connection = DriverManager.getConnection(TEST_JDBC_ADMIN_URL, TEST_DB_USER, TEST_DB_PASSWORD);
+			var existsStatement = connection.prepareStatement("SELECT 1 FROM pg_database WHERE datname = ?");
+		) {
+			existsStatement.setString(1, TEST_DB_NAME);
+			try (var result = existsStatement.executeQuery()) {
+				if (result.next()) {
+					return;
+				}
+			}
+
+			try (var statement = connection.createStatement()) {
+				statement.execute("CREATE DATABASE " + TEST_DB_NAME);
+			}
+		}
+	}
+
+	private static void applyMigrations() throws Exception {
+		try (var connection = DriverManager.getConnection(TEST_JDBC_URL, TEST_DB_USER, TEST_DB_PASSWORD)) {
+			final var database = DatabaseFactory.getInstance()
+				.findCorrectDatabaseImplementation(new JdbcConnection(connection));
+			final var resources = projectRoot().resolve("app/src/main/resources");
+
+			try (var accessor = new DirectoryResourceAccessor(resources)) {
+				final var liquibase = new Liquibase(
+					"db/changelog/db.changelog-master.json",
+					accessor,
+					database
+				);
+				liquibase.update(new Contexts(), new LabelExpression());
+			}
+		}
+	}
+
+	private static Path projectRoot() {
+		final var explicit = System.getProperty("maven.multiModuleProjectDirectory");
+		if (explicit != null && !explicit.isBlank()) {
+			return Path.of(explicit);
+		}
+		final var cwd = Path.of("").toAbsolutePath().normalize();
+		if (cwd.getFileName() != null && "app".equals(cwd.getFileName().toString())) {
+			return cwd.getParent();
+		}
+		return cwd;
 	}
 
 	private static HttpClientProperties defaultProperties() {

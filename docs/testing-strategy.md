@@ -21,16 +21,12 @@
   - multi-component orchestration
 - Live tests:
   - real external sources
-  - manual only, never required in default CI
+  - manual only, must not break mandatory CI
 
 ## Rules
 
 - Every bug fix must include regression test.
 - Contract changes require OpenAPI/event-schema + contract tests update.
 - Flaky tests are not allowed in mandatory CI pipeline.
-
-## Commands
-
-- Full mandatory checks: `./mvnw -B -ntp clean verify`
-- Contract layer only: `./mvnw -pl app -Dtest='*ContractTest' test`
-- Integration profile: `./mvnw -pl app -P integration-tests -Ddb.tests=true verify`
+- Mandatory CI covers analyzers plus deterministic tests only.
+- Commands and mandatory gates are defined in `docs/quality-gates.md`.

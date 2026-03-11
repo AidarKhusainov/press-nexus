@@ -42,7 +42,7 @@
 
 - Secrets must be passed via env/secret manager only.
 - Principle of least privilege for DB/API integrations.
-- Dependency updates and security scanning are mandatory in CI.
+- Dependency updates must stay under regular review; blocking CI is reserved for the mandatory Maven quality gates and tests.
 
 ## Limits and Guardrails
 

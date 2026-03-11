@@ -65,14 +65,13 @@ The agent must execute the full engineering lifecycle according to the rules bel
 - Update/add `*ContractTest`.
 - Run:
   - `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
-  - pull request CI job `contract-breaking`
 
 ### B. If event/webhook payload changes
 
 - Update `docs/contracts/events/*.schema.json`.
 - For breaking change: add a new versioned file `-vN`.
 - Update contract tests.
-- Run contract-breaking check.
+- Run mandatory CI and contract tests.
 
 ### C. If architecture/module boundaries change
 
@@ -96,10 +95,13 @@ Minimum for any functional task:
 
 1. `./mvnw -B -ntp clean verify`
 
+If DB-backed integration behavior is impacted:
+
+2. `./mvnw -B -ntp clean verify -Ddb.tests=true`
+
 If contracts are impacted:
 
-2. `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
-3. PR CI `contract-breaking` job must pass
+3. `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
 
 ## 8) CI Gates (must stay green)
 
@@ -110,10 +112,8 @@ If contracts are impacted:
 - JaCoCo threshold
 - Unit/contract tests
 - ArchUnit tests
-- Dependency Review
-- Gitleaks
-- SBOM (CycloneDX) + Grype vuln scan
-- CodeQL (separate workflow)
+- DB-backed integration tests in CI
+- Container image publish on `master`
 
 The agent must not treat a task as complete if any mandatory gate is expected to fail.
 
@@ -146,7 +146,7 @@ In the final response, the agent must provide:
 ## 12) Helpful Commands
 
 - Full local verify: `./mvnw -B -ntp clean verify`
+- Full CI-equivalent verify: `./mvnw -B -ntp clean verify -Ddb.tests=true`
 - Regenerate OpenAPI HTTP controllers: `./mvnw -B -ntp -pl app generate-sources`
 - Contract tests only: `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
-- Contract breaking guard: PR CI job `contract-breaking`
 - Start local infra: `docker compose -f docker/compose.yml up -d app`

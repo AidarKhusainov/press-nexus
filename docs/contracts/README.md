@@ -17,7 +17,6 @@
    - `app/src/main/java/com/nexus/press/app/controller`
 4. Run contract checks:
    - `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
-   - ensure PR CI job `contract-breaking` passes
 
 Do not manually edit generated files under `app/target/generated-sources/openapi`.
 Do not use OpenAPI generator `importMappings` for API schemas: DTO must come from `openapi.yaml`.

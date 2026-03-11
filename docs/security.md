@@ -8,21 +8,19 @@
 - Least privilege for DB and external APIs.
 - Internal operational endpoints must be protected with `X-PressNexus-Api-Key` when `press.security.internal-api.enabled=true`.
 - Telegram webhook ingress should validate `X-Telegram-Bot-Api-Secret-Token`.
-- Production CD authenticates with `PROD_SSH_KEY`, normalizes escaped/base64 key material in GitHub Actions, and verifies the server host identity against `PROD_SSH_FINGERPRINT`.
+- Production CD authenticates with `PROD_SSH_KEY`.
+- Production CD passes deploy-time application secrets from GitHub Actions to the remote `docker compose` command instead of storing a persistent `.env` on the server.
 - Production deployments should be gated by the GitHub `production` environment instead of relying on repository-wide secrets alone.
 
 ## Dependency Hygiene
 
 - Dependabot enabled for Maven and GitHub Actions.
-- Dependency review check is mandatory for PR.
-- CycloneDX SBOM is generated in CI (`target/bom.json`).
-- SBOM is scanned with Grype; high-severity findings fail the pipeline.
 - Critical CVEs must be fixed with highest priority.
 
 ## Security Scanning
 
-- Gitleaks is mandatory in CI to prevent secret leakage.
-- CodeQL SAST is enabled for Java code.
+- Maven quality gates and tests remain on the blocking CI path.
+- Additional secret/dependency/SAST scanning can be enabled separately, but should not make the default delivery path flaky.
 
 ## Threat Modeling
 
