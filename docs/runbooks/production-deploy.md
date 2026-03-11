@@ -52,6 +52,7 @@ Use GitHub Actions CD for normal production rollouts.
 - Docker Compose plugin or `docker-compose`
 - reverse proxy or other HTTPS ingress in front of the app
 - persistent storage for PostgreSQL data and Ollama models
+- outbound internet access from containers for external integrations and the initial Ollama model pull
 
 ## Deploy Topology
 
@@ -67,6 +68,7 @@ Use GitHub Actions CD for normal production rollouts.
 7. Keep published ports bound to loopback unless a reverse proxy or ingress explicitly needs wider exposure.
 
 For a single-server rollout, keep `APP_BIND_ADDRESS=127.0.0.1` when a reverse proxy is installed.
+Keep PostgreSQL on the internal backend network only. The app, Ollama, and `ollama-model-init` must also join an egress-capable network; otherwise `ollama-model-init` cannot fetch `nomic-embed-text`, and the `app` service will stay in `Created` because it depends on that init job succeeding.
 
 ## Manual Fallback
 

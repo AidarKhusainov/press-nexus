@@ -57,6 +57,7 @@ services:
     pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
     networks:
       - backend
+      - egress
 
   ollama-model-init:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.5}
@@ -72,6 +73,7 @@ services:
     logging: *default-logging
     networks:
       - backend
+      - egress
 
   app:
     image: ${APP_IMAGE:?Set APP_IMAGE}
@@ -118,6 +120,7 @@ services:
     stop_grace_period: ${APP_STOP_GRACE_PERIOD:-30s}
     networks:
       - backend
+      - egress
 
 volumes:
   press-postgres-data:
@@ -127,3 +130,4 @@ volumes:
 networks:
   backend:
     internal: true
+  egress:
