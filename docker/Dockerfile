@@ -33,7 +33,7 @@ ENV SPRING_PROFILES_ACTIVE=prod \
 	JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0
 
 RUN groupadd --gid 10001 appuser \
-	&& useradd --uid 10001 --gid 10001 --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser appuser \
+	&& useradd --uid 10001 --gid 10001 --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
 	&& mkdir -p /var/log/press-nexus \
 	&& chmod 1777 /tmp \
 	&& chown -R 10001:10001 /app /home/appuser /var/log/press-nexus
