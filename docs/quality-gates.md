@@ -13,7 +13,7 @@
 - Architecture rules: ArchUnit (`ArchitectureRulesTest`)
 - Unit tests: Surefire
 - Contract tests: `*ContractTest`
-- Contract breaking guard: `scripts/check-contract-breaking.sh` (PR)
+- Contract breaking guard: CI job `contract-breaking` (PR)
 - Integration tests: Failsafe profile
 - Coverage threshold: JaCoCo line coverage >= configured minimum
 - Secrets scanning: Gitleaks
@@ -30,29 +30,27 @@ Merge to protected branch is blocked if any gate fails.
 ## Local Run
 
 ```bash
-./scripts/verify-local.sh
+./mvnw -B -ntp clean verify
 ```
 
 ## Explicit Contract Tests Run
 
 ```bash
-./scripts/verify-contracts.sh
+./mvnw -B -ntp -pl app -Dtest='*ContractTest' test
 ```
 
 ## Contract Breaking Check (PR)
 
-```bash
-CONTRACT_BASE_REF=origin/main ./scripts/check-contract-breaking.sh
-```
+Handled by the GitHub Actions `contract-breaking` job on pull requests.
 
 ## Integration Profile
 
 ```bash
-./scripts/use-jdk21.sh ./mvnw -pl app -P integration-tests -Ddb.tests=true verify
+./mvnw -pl app -P integration-tests -Ddb.tests=true verify
 ```
 
 ## Live Profile (manual only)
 
 ```bash
-./scripts/use-jdk21.sh ./mvnw -pl app -P live-tests -Dlive.tests.coverage=true verify
+./mvnw -pl app -P live-tests -Dlive.tests.coverage=true verify
 ```

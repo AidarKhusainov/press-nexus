@@ -1,37 +1,89 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:0.8.2-pg16-trixie}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PRESS_DB_USER:-pressnexus}
       POSTGRES_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}
       POSTGRES_DB: pressnexus
+    expose:
+      - "5432"
     volumes:
       - press-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PRESS_DB_USER:-pressnexus} -d pressnexus"]
       interval: 10s
       timeout: 5s
+      start_period: 15s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    mem_limit: ${POSTGRES_MEMORY:-1g}
+    cpus: ${POSTGRES_CPUS:-1.0}
+    pids_limit: ${POSTGRES_PIDS_LIMIT:-256}
+    shm_size: ${POSTGRES_SHM_SIZE:-256m}
+    networks:
+      - backend
 
   ollama:
-    image: ollama/ollama:latest
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.5}
     restart: unless-stopped
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
       OLLAMA_NO_GPU: ${OLLAMA_NO_GPU:-1}
       OMP_NUM_THREADS: ${OLLAMA_THREADS:-4}
+    expose:
+      - "11434"
     volumes:
       - press-ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    mem_limit: ${OLLAMA_MEMORY:-6g}
+    cpus: ${OLLAMA_CPUS:-2.0}
+    pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
+    networks:
+      - backend
+
+  ollama-model-init:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.5}
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ${OLLAMA_BASE_URL:-http://ollama:11434/}
+    command: ["pull", "nomic-embed-text"]
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    networks:
+      - backend
 
   app:
     image: ${APP_IMAGE:?Set APP_IMAGE}
     restart: unless-stopped
+    init: true
     depends_on:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
     environment:
@@ -52,8 +104,26 @@ services:
       OTLP_TRACING_ENDPOINT: ${OTLP_TRACING_ENDPOINT:-http://otel-collector:4318/v1/traces}
     volumes:
       - press-app-logs:/var/log/press-nexus
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${APP_TMPFS_SIZE:-64m}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *default-logging
+    mem_limit: ${APP_MEMORY:-1g}
+    cpus: ${APP_CPUS:-1.0}
+    pids_limit: ${APP_PIDS_LIMIT:-256}
+    stop_grace_period: ${APP_STOP_GRACE_PERIOD:-30s}
+    networks:
+      - backend
 
 volumes:
   press-postgres-data:
   press-ollama-data:
   press-app-logs:
+
+networks:
+  backend:
+    internal: true

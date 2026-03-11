@@ -1,0 +1,253 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  ollama-cpu:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.5}
+    container_name: ollama_cpu
+    ports:
+      - "${OLLAMA_BIND_ADDRESS:-127.0.0.1}:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+      OLLAMA_NO_GPU: "1"
+      OMP_NUM_THREADS: ${OLLAMA_THREADS:-8}
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    mem_limit: ${OLLAMA_MEMORY:-6g}
+    cpus: ${OLLAMA_CPUS:-2.0}
+    pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
+    restart: unless-stopped
+    networks:
+      - backend
+
+  ollama-gpu:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.5}
+    container_name: ollama_gpu
+    profiles: ["gpu"]
+    ports:
+      - "${OLLAMA_BIND_ADDRESS:-127.0.0.1}:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+      OMP_NUM_THREADS: ${OLLAMA_THREADS:-8}
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    mem_limit: ${OLLAMA_MEMORY:-6g}
+    cpus: ${OLLAMA_CPUS:-2.0}
+    pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - backend
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:0.8.2-pg16-trixie}
+    container_name: pressnexus_postgres
+    environment:
+      POSTGRES_USER: ${PRESS_DB_USER:-pressnexus}
+      POSTGRES_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}
+      POSTGRES_DB: pressnexus
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PRESS_DB_USER:-pressnexus} -d pressnexus"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    mem_limit: ${POSTGRES_MEMORY:-1g}
+    cpus: ${POSTGRES_CPUS:-1.0}
+    pids_limit: ${POSTGRES_PIDS_LIMIT:-256}
+    shm_size: ${POSTGRES_SHM_SIZE:-256m}
+    restart: unless-stopped
+    networks:
+      - backend
+
+  ollama-model-init:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.5}
+    depends_on:
+      ollama-cpu:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama-cpu:11434/
+    command: ["pull", "nomic-embed-text"]
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    restart: "no"
+    networks:
+      - backend
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama-cpu:
+        condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0}
+      LOG_DIR: /var/log/press-nexus
+      PRESS_DB_USER: ${PRESS_DB_USER:-pressnexus}
+      PRESS_DB_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}
+      PRESS_R2DBC_URL: ${PRESS_R2DBC_URL:-r2dbc:postgresql://postgres:5432/pressnexus}
+      PRESS_JDBC_URL: ${PRESS_JDBC_URL:-jdbc:postgresql://postgres:5432/pressnexus}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama-cpu:11434/}
+      PRESS_DELIVERY_TELEGRAM_ENABLED: ${PRESS_DELIVERY_TELEGRAM_ENABLED:-false}
+      PRESS_API_KEY: ${PRESS_API_KEY:-}
+      PRESS_OTLP_TRACING_ENABLED: ${PRESS_OTLP_TRACING_ENABLED:-false}
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    volumes:
+      - press-app-logs:/var/log/press-nexus
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${APP_TMPFS_SIZE:-64m}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging: *default-logging
+    mem_limit: ${APP_MEMORY:-1g}
+    cpus: ${APP_CPUS:-1.0}
+    pids_limit: ${APP_PIDS_LIMIT:-256}
+    stop_grace_period: ${APP_STOP_GRACE_PERIOD:-30s}
+    restart: unless-stopped
+    networks:
+      - backend
+      - monitoring
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.10.0}
+    container_name: pressnexus_prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    networks:
+      - monitoring
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.4}
+    container_name: pressnexus_grafana
+    ports:
+      - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    networks:
+      - monitoring
+
+  loki:
+    image: ${LOKI_IMAGE:-grafana/loki:3.4.2}
+    container_name: pressnexus_loki
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "${LOKI_BIND_ADDRESS:-127.0.0.1}:${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ../monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    networks:
+      - monitoring
+
+  promtail:
+    image: ${PROMTAIL_IMAGE:-grafana/promtail:3.4.2}
+    container_name: pressnexus_promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ../monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - press-app-logs:/var/log/press-nexus:ro
+      - ../app/logs:/var/log/press-nexus-alt:ro
+      - promtail-data:/tmp
+    depends_on:
+      - loki
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    networks:
+      - monitoring
+
+volumes:
+  ollama:
+  pgdata:
+  press-app-logs:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  promtail-data:
+
+networks:
+  backend:
+    internal: true
+  monitoring:
+    internal: true

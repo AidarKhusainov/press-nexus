@@ -31,6 +31,6 @@
 
 ## Commands
 
-- Full mandatory checks: `./scripts/verify-local.sh`
-- Contract layer only: `./scripts/use-jdk21.sh ./mvnw -pl app -Dtest='*ContractTest' test`
-- Integration profile: `./scripts/use-jdk21.sh ./mvnw -pl app -P integration-tests -Ddb.tests=true verify`
+- Full mandatory checks: `./mvnw -B -ntp clean verify`
+- Contract layer only: `./mvnw -pl app -Dtest='*ContractTest' test`
+- Integration profile: `./mvnw -pl app -P integration-tests -Ddb.tests=true verify`

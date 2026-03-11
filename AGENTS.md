@@ -22,15 +22,14 @@ The agent must execute the full engineering lifecycle according to the rules bel
 - Architecture decisions: `docs/adr/**`.
 - Engineering docs: `docs/**`.
 - CI and templates: `.github/**`.
-- Scripts: `scripts/**`.
 
 ## 3) Mandatory Runtime/Toolchain
 
 - Java: only JDK 21.
-- Canonical JDK path on this machine: `/home/aidar/.jdks/corretto-21.0.4`.
-- Always run Java/Maven commands through wrapper:
-  - `./scripts/use-jdk21.sh ./mvnw -B -ntp clean verify`
-  - `./scripts/use-jdk21.sh ./mvnw -pl app spring-boot:run`
+- JDK 21 must be available via `JAVA_HOME` or `PATH` for host-side Maven commands.
+- Standard commands:
+  - `./mvnw -B -ntp clean verify`
+  - `./mvnw -pl app spring-boot:run`
 
 ## 4) Non-Negotiable Invariants
 
@@ -62,11 +61,11 @@ The agent must execute the full engineering lifecycle according to the rules bel
 
 - Update `docs/contracts/openapi.yaml`.
 - Regenerate and compile generated APIs/controllers:
-  - `./scripts/generate-openapi.sh`
+  - `./mvnw -B -ntp -pl app generate-sources`
 - Update/add `*ContractTest`.
 - Run:
-  - `./scripts/verify-contracts.sh`
-  - `CONTRACT_BASE_REF=origin/main ./scripts/check-contract-breaking.sh`
+  - `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
+  - pull request CI job `contract-breaking`
 
 ### B. If event/webhook payload changes
 
@@ -95,12 +94,12 @@ The agent must execute the full engineering lifecycle according to the rules bel
 
 Minimum for any functional task:
 
-1. `./scripts/use-jdk21.sh ./mvnw -B -ntp clean verify`
+1. `./mvnw -B -ntp clean verify`
 
 If contracts are impacted:
 
-2. `./scripts/verify-contracts.sh`
-3. `CONTRACT_BASE_REF=origin/main ./scripts/check-contract-breaking.sh`
+2. `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
+3. PR CI `contract-breaking` job must pass
 
 ## 8) CI Gates (must stay green)
 
@@ -146,8 +145,8 @@ In the final response, the agent must provide:
 
 ## 12) Helpful Commands
 
-- Full local verify: `./scripts/verify-local.sh`
-- Regenerate OpenAPI HTTP controllers: `./scripts/generate-openapi.sh`
-- Contract tests only: `./scripts/verify-contracts.sh`
-- Contract breaking guard: `CONTRACT_BASE_REF=origin/main ./scripts/check-contract-breaking.sh`
-- Start local infra: `./scripts/init-local-env.sh`
+- Full local verify: `./mvnw -B -ntp clean verify`
+- Regenerate OpenAPI HTTP controllers: `./mvnw -B -ntp -pl app generate-sources`
+- Contract tests only: `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
+- Contract breaking guard: PR CI job `contract-breaking`
+- Start local infra: `docker compose -f docker/compose.yml up -d app`

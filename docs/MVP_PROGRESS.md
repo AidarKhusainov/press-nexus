@@ -82,10 +82,10 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 ## Next Tasks (priority)
 
 1. Start closed beta for 20 users and collect first retention/quality feedback in `/api/analytics/product-report/daily`.
-   Launch tooling is ready via `docs/runbooks/closed-beta-launch.md` and `./scripts/closed-beta-check.sh`; remaining work is inviting real users and observing non-zero traffic.
+   Operator steps are documented in `docs/runbooks/closed-beta-launch.md`; remaining work is inviting real users and observing non-zero traffic.
 2. Adjust noise/ranking quality based on first beta feedback and manual review of digests.
 3. Expand beta to 50-100 users after the first quality fixes land.
-4. Defer daily Go/No-Go metric refresh via `./scripts/update-mvp-progress-go-no-go.sh` until beta traffic is non-zero.
+4. Defer daily Go/No-Go metric refresh until beta traffic is non-zero.
 
 ## Next Development Tasks
 
@@ -98,6 +98,4 @@ As of 2026-03-09, beta has no paid premium tier: all current functionality stays
 
 1. After each feature, update statuses in the tables above.
 2. For each `CHECK`, add a link to report/metric (Grafana/SQL/log).
-3. Once closed beta generates non-zero delivery/feedback data, update `Go/No-Go metrics` by running:
-   - `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD`
-   - If the app API is not running but Prometheus has the latest product snapshot, use `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD --prometheus-base-url http://localhost:9090`
+3. Once closed beta generates non-zero delivery/feedback data, update `Go/No-Go metrics` manually from `/api/analytics/product-report/daily` or from the latest Prometheus snapshot.

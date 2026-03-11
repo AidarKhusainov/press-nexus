@@ -21,10 +21,9 @@
 
 ## Test Evidence
 
-- `./scripts/verify-local.sh` passed.
-- `./scripts/use-jdk21.sh ./mvnw -pl app -Dtest='*ContractTest' test` passed.
+- `./mvnw -B -ntp clean verify` passed.
+- `./mvnw -pl app -Dtest='*ContractTest' test` passed.
 
 ## Rollback
 
 - Revert PR commit; no data migration impact.
-

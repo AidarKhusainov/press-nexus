@@ -12,7 +12,7 @@
 - Scheduler: `app/src/main/java/com/nexus/press/app/service/scheduler/**`.
 - Utilities (chunking/vectors): `app/src/main/java/com/nexus/press/app/util/**`.
 - Settings: `app/src/main/resources/application.properties:1`.
-- External services: RIA, NYTimes RSS, Jina Reader; ML backend — Ollama (`docker-compose.yml:1`).
+- External services: RIA, NYTimes RSS, Jina Reader; ML backend — Ollama (`docker/compose.yml:1`).
 
 ## Data Flow (ETL)
 1) Fetch: load feeds/pages from sources.
@@ -78,4 +78,4 @@
 - Entry point: `app/src/main/java/com/nexus/press/app/AppApplication.java:1`
 - Properties: `app/src/main/resources/application.properties:1`
 - POM (root): `pom.xml:1`
-- Docker Compose (Ollama): `docker-compose.yml:1`
+- Docker Compose (Ollama): `docker/compose.yml:1`

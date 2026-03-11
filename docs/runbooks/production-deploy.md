@@ -25,16 +25,22 @@ export PRESS_DB_USER='pressnexus'
 export PRESS_DELIVERY_TELEGRAM_ENABLED='false'
 export PRESS_OTLP_TRACING_ENABLED='false'
 export OTLP_TRACING_ENDPOINT='http://otel-collector:4318/v1/traces'
+export POSTGRES_IMAGE='pgvector/pgvector:0.8.2-pg16-trixie'
+export OLLAMA_IMAGE='ollama/ollama:0.17.5'
+export APP_CPUS='1.0'
+export APP_MEMORY='1g'
+export APP_BIND_ADDRESS='127.0.0.1'
 ```
 
 ## Build
 
 ```bash
-./scripts/use-jdk21.sh ./mvnw -B -ntp clean verify
-docker build -t press-nexus:prod .
+./mvnw -B -ntp clean verify
+docker build -f docker/Dockerfile -t press-nexus:prod .
 ```
 
 Local build remains useful for manual validation. In normal operation, GitHub Actions CI builds and publishes the production image, and GitHub Actions CD deploys that published image without rebuilding it. See [docs/runbooks/github-actions-production-cd.md](/home/aidar/work/Pets/press-nexus/docs/runbooks/github-actions-production-cd.md). Keep production host, SSH key, and SSH fingerprint in GitHub secrets or environment secrets, not in the repository.
+The production compose stack expects secrets to arrive from `.env` or the host environment and keeps the app container on a read-only root filesystem with a dedicated log volume and an internal-only backend network.
 
 ## Deploy Topology
 
@@ -47,8 +53,9 @@ Local build remains useful for manual validation. In normal operation, GitHub Ac
    - Telegram webhook path
    - health probes
 6. Keep internal/reporting endpoints behind reverse proxy restrictions and `X-PressNexus-Api-Key`.
+7. Keep published ports bound to loopback unless a reverse proxy or ingress explicitly needs wider exposure.
 
-For a single-server rollout, the CD workflow uploads `deploy/docker-compose.prod.yml` to `/opt/press-nexus` and runs the stack there. If you already have reverse proxy on the server, keep `APP_BIND_ADDRESS=127.0.0.1`.
+For a single-server rollout, the CD workflow uploads `docker/compose.prod.yml` to `/opt/press-nexus` and runs the stack there. If you already have reverse proxy on the server, keep `APP_BIND_ADDRESS=127.0.0.1`.
 
 ## Telegram Webhook
 

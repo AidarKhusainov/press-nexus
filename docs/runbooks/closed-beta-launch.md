@@ -31,23 +31,30 @@ If the brief is empty, investigate fetch/summarization before inviting beta user
 
 ## 3. Trigger first delivery and collect preview/report
 
-Use the helper script:
+Fetch preview for operator review:
 
 ```bash
-./scripts/closed-beta-check.sh \
-  --api-base-url http://localhost:8080 \
-  --api-key "$PRESS_API_KEY" \
-  --report-date YYYY-MM-DD \
-  --trigger-send-now \
-  --preview-out /tmp/press-beta-preview.txt \
-  --report-json-out /tmp/press-beta-report.json
+curl -sS "http://localhost:8080/api/brief/daily/text?hours=24&limit=5&lang=ru" \
+  > /tmp/press-beta-preview.txt
 ```
 
-This does three things:
+Trigger the first delivery:
 
-- fetches `/api/brief/daily/text` preview for operator review;
-- optionally triggers `POST /api/brief/daily/send`;
-- fetches `/api/analytics/product-report/daily` for the chosen date.
+```bash
+curl -sS \
+  -X POST \
+  -H "X-PressNexus-Api-Key: $PRESS_API_KEY" \
+  "http://localhost:8080/api/brief/daily/send"
+```
+
+Fetch the daily product report:
+
+```bash
+curl -sS \
+  -H "X-PressNexus-Api-Key: $PRESS_API_KEY" \
+  "http://localhost:8080/api/analytics/product-report/daily?date=YYYY-MM-DD" \
+  > /tmp/press-beta-report.json
+```
 
 ## 4. Review quality after first deliveries
 
@@ -59,20 +66,7 @@ Check:
 
 ## 5. Update MVP progress once traffic is non-zero
 
-When the report starts showing real traffic:
-
-```bash
-./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD
-```
-
-Or from Prometheus snapshot:
-
-```bash
-./scripts/update-mvp-progress-go-no-go.sh \
-  --date YYYY-MM-DD \
-  --api-key "$PRESS_API_KEY" \
-  --prometheus-base-url http://localhost:9090
-```
+When the report starts showing real traffic, copy the latest retention/quality values from `/api/analytics/product-report/daily` or from the Prometheus dashboard into `docs/MVP_PROGRESS.md`.
 
 ## Rollback / mitigation
 

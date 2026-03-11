@@ -30,7 +30,7 @@
 - [ ] Contract changed and versioning/backward-compatibility is handled
 - [ ] Contract files updated (`docs/contracts/openapi.yaml`, `docs/contracts/events/*`)
 - [ ] Contract tests updated (`*ContractTest`)
-- [ ] Contract breaking check passed (`scripts/check-contract-breaking.sh`)
+- [ ] Contract breaking CI job passed (`contract-breaking`)
 - [ ] No DB migration
 - [ ] DB migration included + rollback/mitigation documented
 

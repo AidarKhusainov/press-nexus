@@ -48,9 +48,9 @@ The workflow assumes the server already has:
 
 The workflow uploads:
 
-- `deploy-bundle.tar` containing `docker-compose.prod.yml`, `deploy-prod-stack.sh`, and generated `.env`
+- `deploy-bundle.tar` containing `compose.prod.yml` and generated `.env`
 
-into `/opt/press-nexus` and then runs the remote deploy script there.
+into `/opt/press-nexus` and then runs the deploy commands over SSH.
 
 The GHCR credentials are not stored in `.env`; they are passed only to the deploy session.
 The CD workflow does not rebuild the app image. It deploys the image already published by CI.
@@ -60,13 +60,12 @@ SSH host verification is enforced by checking the live host key fingerprint agai
 ## What The Deploy Does
 
 1. Resolves the immutable digest for the image published by CI.
-2. Uploads a deploy bundle containing `.env`, `docker-compose.prod.yml`, and `deploy-prod-stack.sh`.
+2. Uploads a deploy bundle containing `.env` and `compose.prod.yml`.
 3. Logs into `ghcr.io` on the server.
-4. Starts PostgreSQL and Ollama.
-5. Pulls `nomic-embed-text` into Ollama.
-6. Pulls the new application image by digest.
-7. Starts the app with the `prod` profile.
-8. Runs smoke checks against `localhost:$APP_PORT`.
+4. Pulls the new application image by digest.
+5. Starts the app with the `prod` profile through Docker Compose.
+6. Lets Compose bootstrap PostgreSQL, Ollama, and the one-shot `ollama-model-init` service.
+7. Runs smoke checks against `localhost:$APP_PORT`.
 
 ## Rollback
 
@@ -74,7 +73,7 @@ SSH host verification is enforced by checking the live host key fingerprint agai
 2. Run `docker login ghcr.io`.
 3. Open `/opt/press-nexus/.env`.
 4. Replace `APP_IMAGE` with the previous immutable GHCR image reference.
-5. Run `APP_DIR=/opt/press-nexus /opt/press-nexus/deploy-prod-stack.sh`.
+5. Run `docker compose --env-file /opt/press-nexus/.env -f /opt/press-nexus/compose.prod.yml up -d app`.
 
 ## Notes
 

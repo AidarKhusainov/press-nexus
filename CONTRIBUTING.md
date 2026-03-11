@@ -12,26 +12,23 @@
 - JDK 21 (`javac` is required)
 - Docker (for local infrastructure when needed)
 - Git
-- Use `./scripts/use-jdk21.sh` to guarantee JDK 21 selection.
+- Ensure JDK 21 is available via `JAVA_HOME` or `PATH` for host-side Maven commands.
 
 ## Workflow
 
 1. Create a branch: `feature/<short-topic>` or `fix/<short-topic>`.
-2. Start reproducible local environment with `./scripts/init-local-env.sh`.
+2. Start reproducible local environment with `docker compose -f docker/compose.yml up -d app`.
 3. Implement the change within a limited scope.
 4. Update documentation if behavior/config/contracts changed.
 5. Run local verification:
 ```bash
-./scripts/verify-local.sh
+./mvnw -B -ntp clean verify
 ```
 For contract changes, run separately:
 ```bash
-./scripts/verify-contracts.sh
+./mvnw -B -ntp -pl app -Dtest='*ContractTest' test
 ```
-To ensure no breaking contract change is introduced without versioning:
-```bash
-CONTRACT_BASE_REF=origin/main ./scripts/check-contract-breaking.sh
-```
+Breaking contract changes are guarded by the PR CI job `contract-breaking`.
 6. Open a PR using the template and complete all required sections.
 
 ## Definition of Done (minimum)

@@ -12,12 +12,12 @@
 
 1. Change `openapi.yaml`.
 2. Regenerate Spring API/controllers:
-   - `./scripts/generate-openapi.sh`
+   - `./mvnw -B -ntp -pl app generate-sources`
 3. Implement endpoint behavior in controllers under:
    - `app/src/main/java/com/nexus/press/app/controller`
 4. Run contract checks:
-   - `./scripts/verify-contracts.sh`
-   - `CONTRACT_BASE_REF=origin/main ./scripts/check-contract-breaking.sh`
+   - `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
+   - ensure PR CI job `contract-breaking` passes
 
 Do not manually edit generated files under `app/target/generated-sources/openapi`.
 Do not use OpenAPI generator `importMappings` for API schemas: DTO must come from `openapi.yaml`.

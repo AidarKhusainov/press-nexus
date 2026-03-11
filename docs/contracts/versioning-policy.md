@@ -14,7 +14,7 @@
   - updated contract file(s)
   - contract tests
   - compatibility note in PR template
-- PR must pass automated breaking-check gate (`scripts/check-contract-breaking.sh`).
+- PR must pass automated breaking-check gate in CI (`contract-breaking` job).
 
 ## Examples of breaking changes
 

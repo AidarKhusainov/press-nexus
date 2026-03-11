@@ -24,7 +24,6 @@ Press Nexus aggregates news from open sources, normalizes and enriches content, 
 - `docs/` — engineering documentation (architecture, DoD, NFR, ADR, runbooks)
 - `.github/` — CI, PR/Issue templates, CODEOWNERS
 - `monitoring/` — Prometheus/Grafana/Loki/Promtail configs
-- `scripts/` — local verification utilities
 
 ## Quick Start
 
@@ -40,33 +39,41 @@ If you use monitoring stack, also set:
 export GRAFANA_ADMIN_PASSWORD='<set-grafana-password>'
 ```
 
-1. Check environment:
+1. Check Java environment for host-side Maven commands:
 ```bash
-./scripts/use-jdk21.sh
+java -version
 ```
-2. Full verification:
+2. Start the local stack in Docker:
 ```bash
-./scripts/use-jdk21.sh ./mvnw -B -ntp clean verify
+docker compose -f docker/compose.yml up -d app
 ```
-3. Run application:
+This starts:
+
+- PostgreSQL with extensions initialized from `docker/postgres/initdb.d`
+- Ollama CPU backend
+- automatic pull of `nomic-embed-text` on first bootstrap
+- the Spring Boot app on `http://localhost:8080`
+
+If you already have a local `pgdata` volume from an earlier bootstrap, keep the same `PRESS_DB_PASSWORD`. PostgreSQL applies `POSTGRES_PASSWORD` only when the data directory is initialized for the first time.
+The first `docker compose -f docker/compose.yml up -d app` can take longer because Ollama may need to download the embedding model.
+
+3. Full verification:
 ```bash
-./scripts/use-jdk21.sh ./mvnw -pl app spring-boot:run
+./mvnw -B -ntp clean verify
 ```
-4. Start local environment (DB + AI):
+4. Run application from the host instead of Docker when needed:
 ```bash
-./scripts/init-local-env.sh
+./mvnw -pl app spring-boot:run
 ```
 
 ## Development Commands
 
 - Build + tests: `./mvnw clean verify`
 - Tests only: `./mvnw -pl app test`
-- Generate HTTP controllers from OpenAPI: `./scripts/generate-openapi.sh`
-- Update Go/No-Go section in MVP tracker: `./scripts/update-mvp-progress-go-no-go.sh --date YYYY-MM-DD`
-- Fast local check: `./scripts/verify-local.sh`
+- Generate HTTP controllers from OpenAPI: `./mvnw -B -ntp -pl app generate-sources`
 - Start monitoring stack:
 ```bash
-docker compose --profile monitoring up -d prometheus grafana loki promtail
+docker compose -f docker/compose.yml --profile monitoring up -d prometheus grafana loki promtail
 ```
 
 ## Quality Gates (Mandatory)
