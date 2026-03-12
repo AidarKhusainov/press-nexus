@@ -7,7 +7,6 @@ Press Nexus implements an ingest-enrich-summarize pipeline for news content, fol
 ## Module Boundaries
 
 - `service/news` — ingest/normalize/dedup/persist/similarity pipeline.
-- `service/queue` — in-process queues and consumer orchestration.
 - `service/brief`, `service/delivery`, `service/profile` — user value creation and delivery.
 - `service/analytics`, `observability` — product and technical metrics.
 - `repository` — data access.
@@ -23,16 +22,17 @@ Press Nexus implements an ingest-enrich-summarize pipeline for news content, fol
 ## Data Flow (simplified)
 
 1. Source fetch
-2. Content parse/populate
-3. Persist/upsert
-4. Embedding + similarity
-5. Summarization
-6. Clustering/brief/delivery
+2. Discovery upsert into PostgreSQL backlog
+3. DB-claimed content populate
+4. DB-claimed embedding + pgvector persist
+5. DB-claimed clustering + summarization
+6. Brief/delivery
 
 ## Technical Invariants
 
 - External HTTP calls: timeout + retry + metrics + contextual logging.
-- Queues and scheduler: each task must be safe for re-run.
+- Pipeline workers use DB-backed claim/lease semantics (`status_*` + stage-specific `*_claimed_at`) instead of in-memory stage queues.
+- Scheduler and workers: each run must be safe for re-run and must not overlap with itself.
 - DB migrations: forward-compatible only (rollback via a new migration).
 - Logs: structured JSON, no secrets or PII.
 - Public API/event contracts: source of truth in `docs/contracts/`; breaking changes only via version bump.

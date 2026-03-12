@@ -18,6 +18,7 @@ public class AppMetrics {
 
 	private final MeterRegistry meterRegistry;
 	private final ConcurrentMap<String, AtomicInteger> queueDepthByName = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, AtomicInteger> pipelineBacklogByStageState = new ConcurrentHashMap<>();
 	private final ProductReportSnapshotGaugeValues productReportSnapshotGaugeValues = new ProductReportSnapshotGaugeValues();
 
 	public AppMetrics(final MeterRegistry meterRegistry) {
@@ -62,6 +63,18 @@ public class AppMetrics {
 			.tags("queue", queueName, "event", "emit_failed")
 			.register(meterRegistry)
 			.increment();
+	}
+
+	public void updatePipelineBacklog(final String stage, final String state, final long value) {
+		final String key = stage + ":" + state;
+		pipelineBacklogByStageState.computeIfAbsent(key, ignored -> {
+			final var gaugeValue = new AtomicInteger(0);
+			Gauge.builder("press.pipeline.backlog", gaugeValue, AtomicInteger::get)
+				.description("Current pipeline backlog")
+				.tags("stage", stage, "state", state)
+				.register(meterRegistry);
+			return gaugeValue;
+		}).set((int) Math.max(0L, Math.min(Integer.MAX_VALUE, value)));
 	}
 
 	public Timer.Sample startStageTimer() {
@@ -183,6 +196,14 @@ public class AppMetrics {
 		Counter.builder("press.jobs.runs")
 			.description("Background job runs")
 			.tags("job", job, "outcome", outcome)
+			.register(meterRegistry)
+			.increment();
+	}
+
+	public void jobSkipped(final String job, final String reason) {
+		Counter.builder("press.jobs.skipped")
+			.description("Background job skips")
+			.tags("job", job, "reason", safeTag(reason, "unknown"))
 			.register(meterRegistry)
 			.increment();
 	}

@@ -11,6 +11,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
+import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.Media;
 import org.junit.jupiter.api.Assumptions;
@@ -32,7 +33,8 @@ class AllSourcesLiveParsingIntegrationTest {
 	private static final int MIN_CONTENT_LENGTH = 120;
 	private static final AppMetrics APP_METRICS = new AppMetrics(new SimpleMeterRegistry());
 	private static final WebClientConfig WEB_CLIENT_CONFIG = createWebClientConfig();
-	private static final PopularRssFetchProcessor FETCH_PROCESSOR = new PopularRssFetchProcessor(WEB_CLIENT_CONFIG);
+	private static final PopularRssFetchProcessor FETCH_PROCESSOR =
+		new PopularRssFetchProcessor(WEB_CLIENT_CONFIG, new NewsPipelineProperties());
 	private static final List<NewsPopulateContentProcessor> CONTENT_PROCESSORS = createContentProcessors();
 	// Example: -Dlive.tests.disabledSources=BBC,TASS
 	private static final Set<Media> DISABLED_SOURCES = parseMediaSet("live.tests.disabledSources");

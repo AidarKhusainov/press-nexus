@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import com.nexus.press.app.service.scheduler.ScheduledDailyBriefTask;
-import com.nexus.press.app.service.scheduler.ScheduledEmbeddingRecoveryTask;
 import com.nexus.press.app.service.scheduler.ScheduledNewsFetchTask;
+import com.nexus.press.app.service.scheduler.ScheduledNewsPipelineTask;
 import com.nexus.press.app.service.scheduler.ScheduledProductReportTask;
 
 @SpringBootTest(properties = {
@@ -21,7 +21,7 @@ class AppApplicationTests {
 	private ScheduledNewsFetchTask scheduledNewsFetchTask;
 
 	@MockBean
-	private ScheduledEmbeddingRecoveryTask scheduledEmbeddingRecoveryTask;
+	private ScheduledNewsPipelineTask scheduledNewsPipelineTask;
 
 	@MockBean
 	private ScheduledDailyBriefTask scheduledDailyBriefTask;

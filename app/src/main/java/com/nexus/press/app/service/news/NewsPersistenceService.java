@@ -3,6 +3,7 @@ package com.nexus.press.app.service.news;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import com.nexus.press.app.repository.entity.NewsEntity;
@@ -29,25 +30,65 @@ public class NewsPersistenceService {
 
 	private final DatabaseClient db;
 
+	public record PipelineBacklogSnapshot(
+		long contentPending,
+		long contentInProgress,
+		long contentFailed,
+		long embeddingPending,
+		long embeddingInProgress,
+		long embeddingFailed,
+		long summaryPending,
+		long summaryInProgress,
+		long summaryFailed
+	) {
+
+		public long totalOutstanding() {
+			return contentPending + contentInProgress
+				+ embeddingPending + embeddingInProgress
+				+ summaryPending + summaryInProgress;
+		}
+	}
+
 	public Mono<NewsEntity> upsert(final NewsUpsertRequest req) {
 		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
 		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
 		final var fallbackFetchedAt = req.getFetchedAt() != null ? req.getFetchedAt() : OffsetDateTime.now();
 
-		return upsertByUrl(req, id, contentHash, fallbackFetchedAt)
-			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(req, id, contentHash, fallbackFetchedAt, e));
+		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, baseInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE"))
+			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(
+				req,
+				id,
+				contentHash,
+				fallbackFetchedAt,
+				baseInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE")
+			));
+	}
+
+	public Mono<NewsEntity> upsertDiscovered(final NewsUpsertRequest req) {
+		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
+		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
+		final var fallbackFetchedAt = req.getFetchedAt() != null ? req.getFetchedAt() : OffsetDateTime.now();
+
+		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, discoveryInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE"))
+			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(
+				req,
+				id,
+				contentHash,
+				fallbackFetchedAt,
+				discoveryInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE")
+			));
 	}
 
 	public Mono<Void> updateStatusContent(final String id, final ProcessingStatus status) {
-		return updateStatus(id, "status_content", status);
+		return updateStatus(id, "status_content", "content_claimed_at", status);
 	}
 
 	public Mono<Void> updateStatusEmbedding(final String id, final ProcessingStatus status) {
-		return updateStatus(id, "status_embedding", status);
+		return updateStatus(id, "status_embedding", "embedding_claimed_at", status);
 	}
 
 	public Mono<Void> updateStatusSummary(final String id, final ProcessingStatus status) {
-		return updateStatus(id, "status_summary", status);
+		return updateStatus(id, "status_summary", "summary_claimed_at", status);
 	}
 
 	public Mono<Void> saveNewsSummary(
@@ -82,39 +123,177 @@ public class NewsPersistenceService {
 		return spec.fetch().rowsUpdated().then();
 	}
 
-	public Flux<RawNews> findNewsPendingEmbedding(final int limit) {
+	public Flux<RawNews> claimNewsPendingContent(final int limit, final Duration claimTimeout) {
 		final int safeLimit = Math.max(1, limit);
-		final String sql = """
-			SELECT n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
-			FROM news n
-			WHERE n.status_content = 'DONE'
-			  AND n.content_raw IS NOT NULL
-			  AND btrim(n.content_raw) <> ''
-			  AND (
-			       n.status_embedding <> 'DONE'
-			       OR NOT EXISTS (SELECT 1 FROM news_embedding e WHERE e.news_id = n.id)
-			  )
-			  AND (
-			       n.status_embedding <> 'IN_PROGRESS'
-			       OR n.updated_at < now() - interval '30 minutes'
-			  )
-			ORDER BY n.updated_at ASC
-			LIMIT :limit
+		final long leaseSeconds = safeLeaseSeconds(claimTimeout);
+			final String sql = """
+			WITH claimed AS (
+				SELECT n.id
+				FROM news n
+				WHERE n.status_content = 'PENDING'
+				   OR (
+				        n.status_content = 'IN_PROGRESS'
+				        AND (
+				             n.content_claimed_at IS NULL
+				             OR n.content_claimed_at < now() - (:leaseSeconds * interval '1 second')
+				        )
+				   )
+				ORDER BY n.created_at ASC, n.id ASC
+				LIMIT :limit
+				FOR UPDATE SKIP LOCKED
+			)
+			UPDATE news n
+			SET status_content = 'IN_PROGRESS',
+			    content_claimed_at = now(),
+			    updated_at = now()
+			FROM claimed
+			WHERE n.id = claimed.id
+			RETURNING n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
 			""";
 
 		return db.sql(sql)
+			.bind("leaseSeconds", leaseSeconds)
 			.bind("limit", safeLimit)
-			.map(this::mapPendingEmbeddingRow)
+			.map(this::mapRawNewsRow)
 			.all();
 	}
 
-	private Mono<NewsEntity> upsertByUrl(final NewsUpsertRequest req, final String id, final String hash, final OffsetDateTime fetchedAt) {
-		final String sql = baseInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE");
-		return bindAndExecute(req, id, hash, fetchedAt, sql);
+	public Flux<RawNews> claimNewsPendingEmbedding(final int limit, final Duration claimTimeout) {
+		final int safeLimit = Math.max(1, limit);
+		final long leaseSeconds = safeLeaseSeconds(claimTimeout);
+			final String sql = """
+			WITH claimed AS (
+				SELECT n.id
+				FROM news n
+				WHERE n.status_content = 'DONE'
+				  AND n.content_raw IS NOT NULL
+				  AND btrim(n.content_raw) <> ''
+				  AND (
+				       n.status_embedding = 'PENDING'
+				       OR (
+				            n.status_embedding = 'DONE'
+				            AND NOT EXISTS (SELECT 1 FROM news_embedding e WHERE e.news_id = n.id)
+				       )
+				       OR (
+				            n.status_embedding = 'IN_PROGRESS'
+				            AND (
+				                 n.embedding_claimed_at IS NULL
+				                 OR n.embedding_claimed_at < now() - (:leaseSeconds * interval '1 second')
+				            )
+				       )
+				  )
+				ORDER BY n.created_at ASC, n.id ASC
+				LIMIT :limit
+				FOR UPDATE SKIP LOCKED
+			)
+			UPDATE news n
+			SET status_embedding = 'IN_PROGRESS',
+			    embedding_claimed_at = now(),
+			    updated_at = now()
+			FROM claimed
+			WHERE n.id = claimed.id
+			RETURNING n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
+			""";
+
+		return db.sql(sql)
+			.bind("leaseSeconds", leaseSeconds)
+			.bind("limit", safeLimit)
+			.map(this::mapRawNewsRow)
+			.all();
 	}
 
-	private Mono<NewsEntity> upsertByExternalId(final NewsUpsertRequest req, final String id, final String hash, final OffsetDateTime fetchedAt) {
-		final String sql = baseInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE");
+	public Flux<RawNews> claimNewsPendingSummary(final int limit, final Duration claimTimeout) {
+		final int safeLimit = Math.max(1, limit);
+		final long leaseSeconds = safeLeaseSeconds(claimTimeout);
+			final String sql = """
+			WITH claimed AS (
+				SELECT n.id
+				FROM news n
+				WHERE n.status_content = 'DONE'
+				  AND n.status_embedding = 'DONE'
+				  AND n.content_raw IS NOT NULL
+				  AND btrim(n.content_raw) <> ''
+				  AND (
+				       n.status_summary = 'PENDING'
+				       OR (
+				            n.status_summary = 'IN_PROGRESS'
+				            AND (
+				                 n.summary_claimed_at IS NULL
+				                 OR n.summary_claimed_at < now() - (:leaseSeconds * interval '1 second')
+				            )
+				       )
+				  )
+				ORDER BY n.created_at ASC, n.id ASC
+				LIMIT :limit
+				FOR UPDATE SKIP LOCKED
+			)
+			UPDATE news n
+			SET status_summary = 'IN_PROGRESS',
+			    summary_claimed_at = now(),
+			    updated_at = now()
+			FROM claimed
+			WHERE n.id = claimed.id
+			RETURNING n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
+			""";
+
+		return db.sql(sql)
+			.bind("leaseSeconds", leaseSeconds)
+			.bind("limit", safeLimit)
+			.map(this::mapRawNewsRow)
+			.all();
+	}
+
+	public Mono<PipelineBacklogSnapshot> loadPipelineBacklog() {
+			final String sql = """
+			SELECT
+				COUNT(*) FILTER (WHERE n.status_content = 'PENDING') AS content_pending,
+				COUNT(*) FILTER (WHERE n.status_content = 'IN_PROGRESS') AS content_in_progress,
+				COUNT(*) FILTER (WHERE n.status_content = 'FAILED') AS content_failed,
+				COUNT(*) FILTER (
+					WHERE n.status_content = 'DONE'
+					  AND (
+						   n.status_embedding = 'PENDING'
+						   OR (
+						        n.status_embedding = 'DONE'
+						        AND NOT EXISTS (SELECT 1 FROM news_embedding e WHERE e.news_id = n.id)
+						   )
+					  )
+				) AS embedding_pending,
+				COUNT(*) FILTER (WHERE n.status_embedding = 'IN_PROGRESS') AS embedding_in_progress,
+				COUNT(*) FILTER (WHERE n.status_embedding = 'FAILED') AS embedding_failed,
+				COUNT(*) FILTER (
+					WHERE n.status_content = 'DONE'
+					  AND n.status_embedding = 'DONE'
+					  AND n.status_summary = 'PENDING'
+				) AS summary_pending,
+				COUNT(*) FILTER (WHERE n.status_summary = 'IN_PROGRESS') AS summary_in_progress,
+				COUNT(*) FILTER (WHERE n.status_summary = 'FAILED') AS summary_failed
+			FROM news n
+			""";
+
+		return db.sql(sql)
+			.map((row, md) -> new PipelineBacklogSnapshot(
+				asLong(row.get("content_pending")),
+				asLong(row.get("content_in_progress")),
+				asLong(row.get("content_failed")),
+				asLong(row.get("embedding_pending")),
+				asLong(row.get("embedding_in_progress")),
+				asLong(row.get("embedding_failed")),
+				asLong(row.get("summary_pending")),
+				asLong(row.get("summary_in_progress")),
+				asLong(row.get("summary_failed"))
+			))
+			.one()
+			.defaultIfEmpty(new PipelineBacklogSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0));
+	}
+
+	private Mono<NewsEntity> upsertByUrl(
+		final NewsUpsertRequest req,
+		final String id,
+		final String hash,
+		final OffsetDateTime fetchedAt,
+		final String sql
+	) {
 		return bindAndExecute(req, id, hash, fetchedAt, sql);
 	}
 
@@ -123,12 +302,12 @@ public class NewsPersistenceService {
 		final String id,
 		final String hash,
 		final OffsetDateTime fetchedAt,
-		final DuplicateKeyException e
+		final String retrySql
 	) {
 		if (StringUtils.hasText(req.getExternalId())) {
 			log.warn("URL upsert conflict, retry by (media, external_id): url={} media={} extId={}",
 				req.getUrl(), req.getMedia(), req.getExternalId());
-			return upsertByExternalId(req, id, hash, fetchedAt)
+			return bindAndExecute(req, id, hash, fetchedAt, retrySql)
 				.onErrorResume(DuplicateKeyException.class, ex -> findExistingByNaturalKeys(id, req.getUrl(), hash));
 		}
 
@@ -153,6 +332,21 @@ public class NewsPersistenceService {
 			"status_content = COALESCE(EXCLUDED.status_content, news.status_content), " +
 			"status_embedding = COALESCE(EXCLUDED.status_embedding, news.status_embedding), " +
 			"status_summary = COALESCE(EXCLUDED.status_summary, news.status_summary), " +
+			"updated_at = now() " +
+			"RETURNING *";
+	}
+
+	private String discoveryInsertSql(final String conflictClause) {
+		return "INSERT INTO news (id, media, external_id, url, title, author, language, published_at, fetched_at, " +
+			"content_raw, content_clean, content_hash, status_content, status_embedding, status_summary) " +
+			"VALUES (:id, :media, :externalId, :url, :title, :author, :language, :publishedAt, :fetchedAt, " +
+			":contentRaw, :contentClean, :contentHash, :statusContent, :statusEmbedding, :statusSummary) " +
+			conflictClause + " SET " +
+			"title = EXCLUDED.title, " +
+			"author = COALESCE(EXCLUDED.author, news.author), " +
+			"language = COALESCE(EXCLUDED.language, news.language), " +
+			"published_at = COALESCE(EXCLUDED.published_at, news.published_at), " +
+			"fetched_at = EXCLUDED.fetched_at, " +
 			"updated_at = now() " +
 			"RETURNING *";
 	}
@@ -251,9 +445,26 @@ public class NewsPersistenceService {
 		}
 	}
 
-	private Mono<Void> updateStatus(final String id, final String column, final ProcessingStatus status) {
+	private long safeLeaseSeconds(final Duration claimTimeout) {
+		if (claimTimeout == null || claimTimeout.isNegative() || claimTimeout.isZero()) {
+			return Duration.ofMinutes(30).toSeconds();
+		}
+		return claimTimeout.toSeconds();
+	}
+
+	private long asLong(final Object value) {
+		if (value instanceof Number number) {
+			return number.longValue();
+		}
+		return 0L;
+	}
+
+	private Mono<Void> updateStatus(final String id, final String column, final String claimedAtColumn, final ProcessingStatus status) {
 		if (id == null) return Mono.empty();
-		return db.sql("UPDATE news SET " + column + " = :status, updated_at = now() WHERE id = :id")
+		return db.sql(
+			"UPDATE news SET " + column + " = :status, " + claimedAtColumn + " = CASE " +
+				"WHEN :status = 'IN_PROGRESS' THEN now() ELSE NULL END, updated_at = now() WHERE id = :id"
+		)
 			.bind("status", status.name())
 			.bind("id", id)
 			.fetch().rowsUpdated().then();
@@ -269,7 +480,7 @@ public class NewsPersistenceService {
 		}
 	}
 
-	private RawNews mapPendingEmbeddingRow(final Row row, final RowMetadata md) {
+	private RawNews mapRawNewsRow(final Row row, final RowMetadata md) {
 		final var mediaValue = row.get("media", String.class);
 		return RawNews.builder()
 			.id(row.get("id", String.class))

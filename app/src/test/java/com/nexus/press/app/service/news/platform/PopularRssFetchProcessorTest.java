@@ -16,6 +16,7 @@ import java.util.Map;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
+import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
@@ -49,7 +50,7 @@ class PopularRssFetchProcessorTest {
 			</rss>
 			""";
 
-		final var processor = new PopularRssFetchProcessor(webClientConfig());
+		final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
 		final var parsed = parseFeed(processor, xml, Media.BBC, "https://feed.example/rss", "en");
 
 		assertEquals(1, parsed.size());
@@ -76,7 +77,7 @@ class PopularRssFetchProcessorTest {
 			</feed>
 			""";
 
-		final var processor = new PopularRssFetchProcessor(webClientConfig());
+		final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
 		final var parsed = parseFeed(processor, xml, Media.REUTERS, "https://feed.example/atom", "en");
 
 		assertEquals(1, parsed.size());
@@ -103,7 +104,7 @@ class PopularRssFetchProcessorTest {
 			</rss>
 			""";
 
-		final var processor = new PopularRssFetchProcessor(webClientConfig());
+		final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
 		final var parsed = parseFeed(processor, xml, Media.CNN, "https://feed.example/rss", "en");
 
 		assertTrue(parsed.isEmpty());
@@ -123,7 +124,7 @@ class PopularRssFetchProcessorTest {
 			</rss>
 			""";
 
-		final var processor = new PopularRssFetchProcessor(webClientConfig());
+		final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
 		final var parsed = parseFeed(processor, xml, Media.NPR, "https://feed.example/rss", "en");
 
 		assertEquals(1, parsed.size());
@@ -134,7 +135,7 @@ class PopularRssFetchProcessorTest {
 
 	@Test
 	void buildGoogleNewsFallbackUrlsShouldEncodeQueriesAndIncludeQuotedVariant() throws Exception {
-		final var processor = new PopularRssFetchProcessor(webClientConfig());
+		final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
 		final var feed = newFeedDefinition(Media.SIB_FM, "https://sib.fm/rss", "ru");
 
 		final Method method = PopularRssFetchProcessor.class
@@ -192,7 +193,7 @@ class PopularRssFetchProcessorTest {
 
 		try {
 			final int port = server.getAddress().getPort();
-			final var processor = new PopularRssFetchProcessor(webClientConfig());
+			final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
 			final var feed = newFeedDefinition(Media.SIB_FM, "http://localhost:" + port + "/rss", "ru");
 			final var parsed = fetchFeed(processor, feed).collectList().block(Duration.ofSeconds(20));
 
@@ -213,6 +214,12 @@ class PopularRssFetchProcessorTest {
 		);
 		final var props = new HttpClientProperties(Map.of(HttpClientName.NEWS, cfg));
 		return new WebClientConfig(props, APP_METRICS);
+	}
+
+	private static NewsPipelineProperties newsPipelineProperties() {
+		final var properties = new NewsPipelineProperties();
+		properties.setFetchSourceConcurrency(2);
+		return properties;
 	}
 
 	@SuppressWarnings("unchecked")

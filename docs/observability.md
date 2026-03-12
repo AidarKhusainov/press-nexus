@@ -3,7 +3,7 @@
 ## Required Signals
 
 - Logs: structured, correlation-friendly.
-- Metrics: queue depth, pipeline stage events, external HTTP outcomes, scheduler outcomes.
+- Metrics: DB backlog by stage/state, pipeline stage events, external HTTP outcomes, scheduler outcomes.
 - Onboarding: completion counter `press.onboarding.completed{channel="telegram"}` and completion duration `press.onboarding.completion.seconds{channel="telegram"}`.
 - Daily brief tone moderation: counter `press.brief.tone.moderation{outcome,importance}` for accepted/rejected cards by importance tier.
 - Product analytics: daily snapshot gauges `press.product.report.*` must be published automatically on startup and then every 24h for the previous day, so Go/No-Go metrics remain available in Prometheus/Grafana and in `docs/MVP_PROGRESS.md`.
@@ -20,3 +20,15 @@
 ## Operational Rule
 
 Any new critical flow must include at least one metric and one actionable log event.
+
+## Pipeline Baseline
+
+- Backpressure is enforced via bounded stage concurrency and PostgreSQL backlog, not via in-memory `Sinks.Many` buffers.
+- Required pipeline metrics:
+  - `press.pipeline.backlog{stage,state}`
+  - `press.pipeline.stage.events{stage,outcome}`
+  - `press.pipeline.stage.duration{stage,outcome}`
+  - `press.jobs.runs{job,outcome}`
+  - `press.jobs.skipped{job,reason}` for discovery throttling on high backlog
+- Backlog dashboards and alerts should distinguish `pending`/`in_progress` from `failed`; only active backlog should drive discovery throttling.
+- Readiness must reflect app/runtime dependencies; backlog is an alert/SLO signal, not a readiness gate.

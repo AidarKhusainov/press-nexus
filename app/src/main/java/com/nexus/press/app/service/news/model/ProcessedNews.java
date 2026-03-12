@@ -18,6 +18,4 @@ public class ProcessedNews extends RawNews {
 
 	@With
 	private final String contentSummary;
-	@With
-	private final float[] contentEmbedding;
 }

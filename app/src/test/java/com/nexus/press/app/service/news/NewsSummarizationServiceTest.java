@@ -9,7 +9,6 @@ import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.ai.summ.SummarizationService;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.ProcessedNews;
-import com.nexus.press.app.service.queue.NewsSummarizationQueue;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,9 +21,8 @@ class NewsSummarizationServiceTest {
 	@Test
 	void summarizePersistsSummaryAndMarksStatusDone() {
 		final var summarizer = new StubSummarizationService("Краткая выжимка по событию.");
-		final var queue = new RecordingQueue();
 		final var persistence = new StubPersistenceService();
-		final var service = new NewsSummarizationService(summarizer, queue, persistence, APP_METRICS);
+		final var service = new NewsSummarizationService(summarizer, persistence, APP_METRICS);
 
 		final var result = service.summarize(sampleProcessedNews("id-1", "ru")).block();
 
@@ -37,16 +35,13 @@ class NewsSummarizationServiceTest {
 		assertEquals(1, persistence.savedSummaryCalls);
 		assertEquals("ru", persistence.savedLang);
 		assertEquals("Краткая выжимка по событию.", persistence.savedSummary);
-		assertEquals(1, queue.added.size());
-		assertEquals("id-1", queue.added.getFirst().getId());
 	}
 
 	@Test
 	void summarizeFallsBackToTitleWhenModelReturnsBlankSummary() {
 		final var summarizer = new StubSummarizationService("   ");
-		final var queue = new RecordingQueue();
 		final var persistence = new StubPersistenceService();
-		final var service = new NewsSummarizationService(summarizer, queue, persistence, APP_METRICS);
+		final var service = new NewsSummarizationService(summarizer, persistence, APP_METRICS);
 
 		final var result = service.summarize(sampleProcessedNews("id-2", "ru")).block();
 
@@ -66,7 +61,6 @@ class NewsSummarizationServiceTest {
 			.source(Media.BBC)
 			.publishedDate(OffsetDateTime.parse("2026-02-01T12:00:00Z"))
 			.language(language)
-			.contentEmbedding(new float[] { 1f, 2f })
 			.build();
 	}
 
@@ -115,20 +109,6 @@ class NewsSummarizationServiceTest {
 			savedSummary = summary;
 			savedSummaryCalls++;
 			return Mono.empty();
-		}
-	}
-
-	private static final class RecordingQueue extends NewsSummarizationQueue {
-
-		private final List<ProcessedNews> added = new ArrayList<>();
-
-		private RecordingQueue() {
-			super(APP_METRICS);
-		}
-
-		@Override
-		public void add(final ProcessedNews news) {
-			added.add(news);
 		}
 	}
 }

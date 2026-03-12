@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
+import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import lombok.extern.slf4j.Slf4j;
@@ -275,15 +276,20 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssZ", Locale.ENGLISH);
 
 	private final WebClient webClient;
+	private final NewsPipelineProperties newsPipelineProperties;
 
-	public PopularRssFetchProcessor(final WebClientConfig webClientConfig) {
+	public PopularRssFetchProcessor(
+		final WebClientConfig webClientConfig,
+		final NewsPipelineProperties newsPipelineProperties
+	) {
 		this.webClient = webClientConfig.getWebClient(HttpClientName.NEWS);
+		this.newsPipelineProperties = newsPipelineProperties;
 	}
 
 	@Override
 	public Flux<RawNews> fetchNews() {
 		return Flux.fromIterable(feedDefinitions())
-			.flatMap(this::fetchFeed);
+			.flatMap(this::fetchFeed, Math.max(1, newsPipelineProperties.getFetchSourceConcurrency()), 1);
 	}
 
 	public static List<FeedDefinition> feedDefinitions() {

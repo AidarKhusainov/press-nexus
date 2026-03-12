@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
+import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.Media;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -25,7 +26,7 @@ class BbcLiveParsingIntegrationTest {
 	@Test
 	void bbcRssAndFullContentShouldBeParsed() throws Exception {
 		final var webClientConfig = realWebClientConfig();
-		final var fetchProcessor = new PopularRssFetchProcessor(webClientConfig);
+		final var fetchProcessor = new PopularRssFetchProcessor(webClientConfig, new NewsPipelineProperties());
 		final var contentProcessor = new GenericPopulateContentProcessor(webClientConfig);
 
 		final var fromFeed = fetchProcessor.fetchFeed(

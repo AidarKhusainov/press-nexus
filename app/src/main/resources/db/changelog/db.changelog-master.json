@@ -378,6 +378,20 @@
           }
         ]
       }
+    },
+    {
+      "changeSet": {
+        "id": "004-news-pipeline-stage-leases",
+        "author": "Khusainov Aidar",
+        "changes": [
+          {
+            "sql": {
+              "comment": "Stage-specific lease timestamps prevent discovery updates from extending worker claims",
+              "sql": "ALTER TABLE news ADD COLUMN IF NOT EXISTS content_claimed_at timestamp with time zone; ALTER TABLE news ADD COLUMN IF NOT EXISTS embedding_claimed_at timestamp with time zone; ALTER TABLE news ADD COLUMN IF NOT EXISTS summary_claimed_at timestamp with time zone;"
+            }
+          }
+        ]
+      }
     }
   ]
 }

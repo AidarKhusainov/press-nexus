@@ -12,18 +12,20 @@
 - External HTTP timeouts:
   - connection timeout <= 60s
   - read timeout <= 300s
-- Queue consumer lag target: <= 1000 items for 95% of runtime.
+- DB backlog target: pending backlog should stay bounded and observable; alerting is based on backlog size/age, not readiness state.
 
 ## Reliability
 
 - Pipeline stages must be idempotent.
 - Retries must be bounded and observable.
 - Any external dependency failure should degrade gracefully, not crash the whole app.
+- Stage workers must use claim/lease semantics so parallel workers do not process the same item concurrently.
+- `FAILED` items must not silently re-enter the hot backlog without an explicit recovery policy.
 
 ## Scalability
 
 - Stateless components should support horizontal scaling.
-- Queue architecture must allow migration from in-memory queue to external broker without contract break.
+- Pipeline backlog must tolerate horizontal worker scaling via DB claim/lease before any broker is introduced.
 
 ## Observability
 
@@ -32,9 +34,10 @@
 - Required metrics:
   - throughput
   - error rate
-  - queue depth
+  - pipeline backlog by stage/state
   - external HTTP latency and error ratio
   - scheduler run/failure counters
+  - scheduler skip counters
   - daily product-report snapshot gauges for D1/D7 retention and Useful/Noise rates
 - Health endpoints must expose readiness/liveness.
 

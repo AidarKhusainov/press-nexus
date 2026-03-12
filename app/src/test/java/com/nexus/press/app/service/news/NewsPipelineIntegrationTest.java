@@ -16,9 +16,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
@@ -26,7 +23,6 @@ import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import com.nexus.press.app.service.news.platform.GenericPopulateContentProcessor;
-import com.nexus.press.app.service.queue.NewsPopulateContentQueue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -38,6 +34,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,18 +72,8 @@ class NewsPipelineIntegrationTest {
 		final var html = "<html><body><article><p>" + p1 + "</p><p>" + p2 + "</p></article></body></html>";
 
 		final var persistenceService = new NewsPersistenceService(db);
-		final var queue = new NewsPopulateContentQueue(APP_METRICS);
 		final var processor = new GenericPopulateContentProcessor(stubWebClientConfig((request) -> okResponse(html)));
-		final var populateService = new NewsPopulateContentService(List.of(processor), queue, persistenceService, APP_METRICS);
-
-		final var queuedRef = new AtomicReference<RawNews>();
-		final var latch = new CountDownLatch(1);
-		final var disposable = queue.stream()
-			.take(1)
-			.subscribe(news -> {
-				queuedRef.set(news);
-				latch.countDown();
-			});
+		final var populateService = new NewsPopulateContentService(List.of(processor), persistenceService, APP_METRICS);
 
 		final var id = "it-" + UUID.randomUUID();
 		final var raw = RawNews.builder()
@@ -103,10 +90,6 @@ class NewsPipelineIntegrationTest {
 		assertNotNull(saved);
 		assertTrue(saved.getRawContent().contains("Integration paragraph one"));
 		assertTrue(saved.getRawContent().contains("Integration paragraph two"));
-
-		assertTrue(latch.await(3, TimeUnit.SECONDS));
-		assertNotNull(queuedRef.get());
-		assertEquals(id, queuedRef.get().getId());
 
 		final var row = db.sql("""
 			SELECT media, url, content_raw, status_content, status_embedding, status_summary
@@ -132,13 +115,66 @@ class NewsPipelineIntegrationTest {
 		assertEquals("DONE", row.statusContent());
 		assertEquals("PENDING", row.statusEmbedding());
 		assertEquals("PENDING", row.statusSummary());
+	}
 
-		disposable.dispose();
+	@Test
+	void claimContentUsesStageLeaseAndDoesNotRetryFailedRows() {
+		insertNewsRow("pending-1", "PENDING", null);
+		insertNewsRow("failed-1", "FAILED", null);
+		insertNewsRow("active-1", "IN_PROGRESS", OffsetDateTime.now().minusMinutes(5));
+		insertNewsRow("stale-1", "IN_PROGRESS", OffsetDateTime.now().minusHours(2));
+
+		db.sql("UPDATE news SET updated_at = now() WHERE id = 'stale-1'")
+			.fetch()
+			.rowsUpdated()
+			.block(Duration.ofSeconds(5));
+
+		final var claimedIds = new NewsPersistenceService(db)
+			.claimNewsPendingContent(10, Duration.ofMinutes(30))
+			.map(RawNews::getId)
+			.collectList()
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(claimedIds);
+		assertEquals(List.of("pending-1", "stale-1"), claimedIds);
+		assertFalse(claimedIds.contains("failed-1"));
+		assertFalse(claimedIds.contains("active-1"));
+
+		final var snapshot = new NewsPersistenceService(db)
+			.loadPipelineBacklog()
+			.block(Duration.ofSeconds(5));
+		assertNotNull(snapshot);
+		assertEquals(1L, snapshot.contentFailed());
+		assertEquals(3L, snapshot.totalOutstanding());
 	}
 
 	private void resetNewsTable() {
 		db.sql("TRUNCATE TABLE news CASCADE")
 			.fetch()
+			.rowsUpdated()
+			.block(Duration.ofSeconds(5));
+	}
+
+	private void insertNewsRow(final String id, final String statusContent, final OffsetDateTime contentClaimedAt) {
+		var spec = db.sql("""
+			INSERT INTO news (
+				id, media, url, title, fetched_at, content_raw, content_clean, content_hash,
+				status_content, status_embedding, status_summary, content_claimed_at
+			) VALUES (
+				:id, 'BBC', :url, :title, now(), :content, :content, :contentHash,
+				:statusContent, 'PENDING', 'PENDING', :contentClaimedAt
+			)
+			""")
+			.bind("id", id)
+			.bind("url", "https://example.com/" + id)
+			.bind("title", "Title " + id)
+			.bind("content", "Content " + id)
+			.bind("contentHash", "hash-" + id)
+			.bind("statusContent", statusContent);
+		spec = contentClaimedAt != null
+			? spec.bind("contentClaimedAt", contentClaimedAt)
+			: spec.bindNull("contentClaimedAt", OffsetDateTime.class);
+		spec.fetch()
 			.rowsUpdated()
 			.block(Duration.ofSeconds(5));
 	}

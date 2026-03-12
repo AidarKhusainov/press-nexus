@@ -5,7 +5,6 @@ import java.util.Locale;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.ai.summ.SummarizationService;
 import com.nexus.press.app.service.news.model.ProcessedNews;
-import com.nexus.press.app.service.queue.NewsSummarizationQueue;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,7 +15,6 @@ import org.springframework.stereotype.Service;
 public class NewsSummarizationService {
 
 	private final SummarizationService summarizationService;
-	private final NewsSummarizationQueue newsSummarizationQueue;
 	private final NewsPersistenceService newsPersistenceService;
 	private final AppMetrics appMetrics;
 
@@ -56,10 +54,7 @@ public class NewsSummarizationService {
 			})
 			.flatMap(n -> newsPersistenceService.updateStatusSummary(n.getId(), ProcessingStatus.DONE)
 				.thenReturn(n))
-			.doOnNext(processedNews -> {
-				newsSummarizationQueue.add(processedNews);
-				appMetrics.stageSuccess("summarization", timerSample);
-			})
+			.doOnNext(processedNews -> appMetrics.stageSuccess("summarization", timerSample))
 			.onErrorResume(ex -> {
 				appMetrics.stageFailure("summarization", timerSample, ex);
 				log.warn("Сбой суммаризации: id={} title={}", news.getId(), news.getTitle(), ex);
@@ -101,7 +96,6 @@ public class NewsSummarizationService {
 			.source(source.getSource())
 			.publishedDate(source.getPublishedDate())
 			.language(source.getLanguage())
-			.contentEmbedding(source.getContentEmbedding())
 			.contentSummary(summary)
 			.build();
 	}

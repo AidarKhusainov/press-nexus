@@ -10,6 +10,7 @@ import java.util.Map;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
+import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.RawNews;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ class AllSourcesCoverageLiveTest {
 
 	@Test
 	void shouldReportFullTextCoverageAcrossAllSources() {
-		final var fetchProcessor = new PopularRssFetchProcessor(WEB_CLIENT_CONFIG);
+		final var fetchProcessor = new PopularRssFetchProcessor(WEB_CLIENT_CONFIG, new NewsPipelineProperties());
 		final var contentProcessors = List.<NewsPopulateContentProcessor>of(
 			new ReutersGoogleNewsPopulateContentProcessor(WEB_CLIENT_CONFIG),
 			new TassPopulateContentProcessor(WEB_CLIENT_CONFIG),
@@ -42,7 +43,7 @@ class AllSourcesCoverageLiveTest {
 			.toList();
 		final var sources = PopularRssFetchProcessor.feedDefinitions();
 
-		final var results = Flux.fromIterable(sources)
+		final List<Result> results = Flux.fromIterable(sources)
 			.flatMap(src -> evaluateSource(src, fetchProcessor, contentProcessors), CONCURRENCY)
 			.collectList()
 			.block(TOTAL_TIMEOUT);

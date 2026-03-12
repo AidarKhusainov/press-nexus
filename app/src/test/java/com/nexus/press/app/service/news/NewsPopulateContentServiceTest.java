@@ -3,14 +3,12 @@ package com.nexus.press.app.service.news;
 import reactor.core.publisher.Mono;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.repository.entity.NewsEntity;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import com.nexus.press.app.service.news.platform.NewsPopulateContentProcessor;
-import com.nexus.press.app.service.queue.NewsPopulateContentQueue;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,7 +22,6 @@ class NewsPopulateContentServiceTest {
 	@Test
 	void populateContinuesWhenProcessorFailsAndPersistsFallbackContent() {
 		final var source = sampleNews("id-1", "fallback content");
-		final var queue = new RecordingQueue();
 		final var persistence = new StubPersistenceService();
 		final var processor = new NewsPopulateContentProcessor() {
 			@Override
@@ -37,7 +34,7 @@ class NewsPopulateContentServiceTest {
 				return Mono.error(new RuntimeException("parser error"));
 			}
 		};
-		final var service = new NewsPopulateContentService(List.of(processor), queue, persistence, APP_METRICS);
+		final var service = new NewsPopulateContentService(List.of(processor), persistence, APP_METRICS);
 
 		final var result = service.populate(source).block();
 
@@ -48,15 +45,12 @@ class NewsPopulateContentServiceTest {
 		assertEquals(ProcessingStatus.DONE, persistence.lastUpsertRequest.getStatusContent());
 		assertEquals(ProcessingStatus.PENDING, persistence.lastUpsertRequest.getStatusEmbedding());
 		assertEquals(ProcessingStatus.PENDING, persistence.lastUpsertRequest.getStatusSummary());
-		assertEquals(1, queue.added.size());
-		assertEquals(source.getId(), queue.added.getFirst().getId());
 		assertNull(persistence.updatedStatusId);
 	}
 
 	@Test
 	void populateMarksContentFailedWhenPersistenceFails() {
 		final var source = sampleNews("id-2", "fallback content");
-		final var queue = new RecordingQueue();
 		final var persistence = new StubPersistenceService();
 		persistence.upsertError = new RuntimeException("db error");
 		final var processor = new NewsPopulateContentProcessor() {
@@ -70,21 +64,19 @@ class NewsPopulateContentServiceTest {
 				return Mono.just(news.withRawContent("full content"));
 			}
 		};
-		final var service = new NewsPopulateContentService(List.of(processor), queue, persistence, APP_METRICS);
+		final var service = new NewsPopulateContentService(List.of(processor), persistence, APP_METRICS);
 
 		final var result = service.populate(source).block();
 
 		assertNull(result);
 		assertEquals(source.getId(), persistence.updatedStatusId);
 		assertEquals(ProcessingStatus.FAILED, persistence.updatedStatus);
-		assertEquals(0, queue.added.size());
 	}
 
 	@Test
 	void populateUsesDescriptionAsFallbackWhenNoProcessorRegistered() {
-		final var queue = new RecordingQueue();
 		final var persistence = new StubPersistenceService();
-		final var serviceWithoutProcessor = new NewsPopulateContentService(List.of(), queue, persistence, APP_METRICS);
+		final var serviceWithoutProcessor = new NewsPopulateContentService(List.of(), persistence, APP_METRICS);
 		final var source = sampleNews("id-3", "plain description");
 
 		final var result = serviceWithoutProcessor.populate(source).block();
@@ -92,16 +84,13 @@ class NewsPopulateContentServiceTest {
 		assertNotNull(result);
 		assertEquals("plain description", result.getRawContent());
 		assertEquals("plain description", persistence.lastUpsertRequest.getContentRaw());
-		assertEquals(1, queue.added.size());
-		assertEquals(source.getId(), queue.added.getFirst().getId());
 	}
 
 	@Test
 	void populateUsesHigherPriorityProcessorFirst() {
 		final var source = sampleNews("id-4", "fallback");
-		final var queue = new RecordingQueue();
 		final var persistence = new StubPersistenceService();
-		final var calls = new ArrayList<String>();
+		final var calls = new java.util.ArrayList<String>();
 
 		final var genericProcessor = new NewsPopulateContentProcessor() {
 			@Override
@@ -139,7 +128,7 @@ class NewsPopulateContentServiceTest {
 			}
 		};
 
-		final var service = new NewsPopulateContentService(List.of(genericProcessor, specificProcessor), queue, persistence, APP_METRICS);
+		final var service = new NewsPopulateContentService(List.of(genericProcessor, specificProcessor), persistence, APP_METRICS);
 		final var result = service.populate(source).block();
 
 		assertNotNull(result);
@@ -184,20 +173,6 @@ class NewsPopulateContentServiceTest {
 			updatedStatusId = id;
 			updatedStatus = status;
 			return Mono.empty();
-		}
-	}
-
-	private static final class RecordingQueue extends NewsPopulateContentQueue {
-
-		private final List<RawNews> added = new ArrayList<>();
-
-		private RecordingQueue() {
-			super(APP_METRICS);
-		}
-
-		@Override
-		public void add(final RawNews news) {
-			added.add(news);
 		}
 	}
 }

@@ -7,7 +7,6 @@ import java.util.List;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.RawNews;
 import com.nexus.press.app.service.news.platform.NewsPopulateContentProcessor;
-import com.nexus.press.app.service.queue.NewsPopulateContentQueue;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -17,20 +16,17 @@ import org.springframework.util.StringUtils;
 public class NewsPopulateContentService {
 
 	private final List<NewsPopulateContentProcessor> populateContentProcessors;
-	private final NewsPopulateContentQueue newsPopulateContentQueue;
 	private final NewsPersistenceService newsPersistenceService;
 	private final AppMetrics appMetrics;
 
 	public NewsPopulateContentService(
 		final List<NewsPopulateContentProcessor> populateContentProcessors,
-		final NewsPopulateContentQueue newsPopulateContentQueue,
 		final NewsPersistenceService newsPersistenceService,
 		final AppMetrics appMetrics
 	) {
 		this.populateContentProcessors = populateContentProcessors.stream()
 			.sorted(Comparator.comparingInt(NewsPopulateContentProcessor::getPriority).reversed())
 			.toList();
-		this.newsPopulateContentQueue = newsPopulateContentQueue;
 		this.newsPersistenceService = newsPersistenceService;
 		this.appMetrics = appMetrics;
 	}
@@ -53,10 +49,7 @@ public class NewsPopulateContentService {
 			.map(this::withFallbackContent)
 			.flatMap(this::persist)
 			.timeout(Duration.ofMinutes(5))
-			.doOnNext(news -> {
-				newsPopulateContentQueue.add(news);
-				appMetrics.stageSuccess("populate", timerSample);
-			})
+			.doOnNext(news -> appMetrics.stageSuccess("populate", timerSample))
 			.onErrorResume(ex -> {
 				appMetrics.stageFailure("populate", timerSample, ex);
 				log.error("Ошибка при заполнении новости: id={} title={}", rawNews.getId(), rawNews.getTitle(), ex);

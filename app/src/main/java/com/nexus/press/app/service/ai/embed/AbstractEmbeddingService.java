@@ -36,7 +36,7 @@ public abstract class AbstractEmbeddingService implements EmbeddingService {
 		final var chunks = TextChunker.bySentences(text, maxChunkChars);
 
 		return Flux.fromIterable(chunks)
-			.flatMap(chunk -> embedOnce(chunk).map(VectorUtils::l2Normalize))
+			.concatMap(chunk -> embedOnce(chunk).map(VectorUtils::l2Normalize))
 			.collectList()
 			.map(VectorUtils::meanPool)
 			.map(VectorUtils::l2Normalize);
