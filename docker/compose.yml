@@ -123,7 +123,7 @@ services:
         condition: service_completed_successfully
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError}
       LOG_DIR: /var/log/press-nexus
       PRESS_DB_USER: ${PRESS_DB_USER:-pressnexus}
       PRESS_DB_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}

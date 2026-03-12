@@ -90,7 +90,7 @@ services:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError}
       LOG_DIR: /var/log/press-nexus
       PRESS_DB_USER: ${PRESS_DB_USER:-pressnexus}
       PRESS_DB_PASSWORD: ${PRESS_DB_PASSWORD:?Set PRESS_DB_PASSWORD}
@@ -114,7 +114,7 @@ services:
     cap_drop:
       - ALL
     logging: *default-logging
-    mem_limit: ${APP_MEMORY:-1g}
+    mem_limit: ${APP_MEMORY:-3g}
     cpus: ${APP_CPUS:-1.0}
     pids_limit: ${APP_PIDS_LIMIT:-256}
     stop_grace_period: ${APP_STOP_GRACE_PERIOD:-30s}

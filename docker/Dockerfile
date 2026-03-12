@@ -30,7 +30,7 @@ WORKDIR /app
 
 ENV SPRING_PROFILES_ACTIVE=prod \
 	LOG_DIR=/var/log/press-nexus \
-	JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0
+	JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
 
 RUN groupadd --gid 10001 appuser \
 	&& useradd --uid 10001 --gid 10001 --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \

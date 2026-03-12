@@ -14,7 +14,6 @@ public class NewsPopulateContentQueueConsumer {
 
 	public NewsPopulateContentQueueConsumer(final NewsPopulateContentQueue queue, final NewsEmbeddingService newsEmbeddingService) {
 		this.subscription = queue.stream()
-			.onBackpressureBuffer(5_000)
 			.doOnNext(news -> queue.markConsumed())
 			.flatMap(newsEmbeddingService::embed)
 			.subscribe(

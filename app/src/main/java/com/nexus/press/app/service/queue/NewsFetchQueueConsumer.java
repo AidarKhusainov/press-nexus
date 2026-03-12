@@ -14,7 +14,6 @@ public class NewsFetchQueueConsumer {
 
 	public NewsFetchQueueConsumer(final NewsFetchQueue queue, final NewsPopulateContentService newsPopulateContentService) {
 		this.subscription = queue.stream()
-			.onBackpressureBuffer(5_000)
 			.doOnNext(news -> queue.markConsumed())
 			.flatMap(newsPopulateContentService::populate)
 			.subscribe(

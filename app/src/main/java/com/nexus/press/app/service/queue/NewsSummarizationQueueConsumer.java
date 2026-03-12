@@ -13,7 +13,6 @@ public class NewsSummarizationQueueConsumer {
 
 	public NewsSummarizationQueueConsumer(final NewsSummarizationQueue queue) {
 		this.subscription = queue.stream()
-			.onBackpressureBuffer(5_000)
 			.doOnNext(news -> queue.markConsumed())
 			.doOnNext(processedNews -> log.info("Новость {} полностью обработана", processedNews.getId()))
 			.subscribe(
