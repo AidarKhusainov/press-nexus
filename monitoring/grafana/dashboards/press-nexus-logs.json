@@ -5,7 +5,7 @@
   "tags": ["press-nexus", "logs"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": {
     "from": "now-1h",
@@ -80,7 +80,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"press-nexus\", channel=~\"$channel\", level=~\"${level:regex}\"} |= \"$search\"",
+          "expr": "{job=\"press-nexus\", channel=~\"$channel\", level=~\"$level\"} |= \"$search\"",
           "queryType": "range"
         }
       ]
