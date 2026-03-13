@@ -13,7 +13,7 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import com.nexus.press.app.config.property.InternalApiSecurityProperties;
-import com.nexus.press.app.config.property.TelegramWebhookSecurityProperties;
+import com.nexus.press.app.config.property.TelegramProperties;
 
 public class RequestAuthenticationFilter implements WebFilter {
 
@@ -31,14 +31,14 @@ public class RequestAuthenticationFilter implements WebFilter {
 	private static final String ACTUATOR_INFO_PATH = "/actuator/info";
 
 	private final InternalApiSecurityProperties internalApiSecurityProperties;
-	private final TelegramWebhookSecurityProperties telegramWebhookSecurityProperties;
+	private final TelegramProperties telegramProperties;
 
 	public RequestAuthenticationFilter(
 		final InternalApiSecurityProperties internalApiSecurityProperties,
-		final TelegramWebhookSecurityProperties telegramWebhookSecurityProperties
+		final TelegramProperties telegramProperties
 	) {
 		this.internalApiSecurityProperties = internalApiSecurityProperties;
-		this.telegramWebhookSecurityProperties = telegramWebhookSecurityProperties;
+		this.telegramProperties = telegramProperties;
 		if (internalApiSecurityProperties.isEnabled() && !StringUtils.hasText(internalApiSecurityProperties.getApiKey())) {
 			throw new IllegalStateException("press.security.internal-api.api-key must be configured when internal API auth is enabled");
 		}
@@ -57,7 +57,7 @@ public class RequestAuthenticationFilter implements WebFilter {
 	}
 
 	private Mono<Void> validateTelegramSecret(final ServerWebExchange exchange, final WebFilterChain chain) {
-		final String configuredSecret = telegramWebhookSecurityProperties.getSecretToken();
+		final String configuredSecret = telegramProperties.webhook().secretToken();
 		if (!StringUtils.hasText(configuredSecret)) {
 			return chain.filter(exchange);
 		}

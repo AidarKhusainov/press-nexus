@@ -7,7 +7,7 @@ Launch and monitor the first closed beta wave for 20 Telegram users with reprodu
 ## Preconditions
 
 - App is running and healthy on `http://localhost:8080`.
-- Telegram delivery is enabled and `press.delivery.telegram.bot-token` is configured.
+- Telegram delivery is enabled and `platform.telegram.bot.token` is configured.
 - PostgreSQL is available and migrations are applied.
 - Internal API auth is configured if `press.security.internal-api.enabled=true`.
 - Prometheus/Grafana are optional but recommended for daily follow-up.
@@ -70,7 +70,7 @@ When the report starts showing real traffic, copy the latest retention/quality v
 
 ## Rollback / mitigation
 
-- Stop scheduled delivery by setting `press.delivery.telegram.enabled=false`.
+- Stop scheduled delivery by setting `platform.telegram.delivery.enabled=false`.
 - Rotate `PRESS_API_KEY` or `TELEGRAM_WEBHOOK_SECRET_TOKEN` if ingress credentials are suspected to be exposed.
 - Use `/api/brief/daily/send` only after preview looks acceptable.
 - If quality degrades, keep beta audience fixed and adjust ranking/noise heuristics before expanding beyond 20 users.

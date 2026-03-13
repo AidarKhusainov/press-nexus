@@ -37,7 +37,7 @@ class OpenAiCompatibleSummarizationServicesTest {
 					{"choices":[{"message":{"content":"Groq summary"}}]}
 					""");
 			}),
-			new GroqProperties("groq-key", "llama-3.3-70b-versatile")
+			new GroqProperties(null, "groq-key", "llama-3.3-70b-versatile")
 		);
 
 		final String summary = service.summarize("Source", "en").block();
@@ -58,7 +58,7 @@ class OpenAiCompatibleSummarizationServicesTest {
 					{"choices":[{"message":{"content":"Cloudflare summary"}}]}
 					""");
 			}),
-			new CloudflareWorkersAiProperties("acc-123", "cf-token", "@cf/meta/llama-3.1-8b-instruct")
+			new CloudflareWorkersAiProperties(null, "acc-123", "cf-token", "@cf/meta/llama-3.1-8b-instruct")
 		);
 
 		final String summary = service.summarize("Source", "en").block();
@@ -88,7 +88,7 @@ class OpenAiCompatibleSummarizationServicesTest {
 					}
 					""");
 			}),
-			new MistralProperties("mistral-key", "mistral-small-latest")
+			new MistralProperties(null, "mistral-key", "mistral-small-latest")
 		);
 
 		final String summary = service.summarize("Source", "en").block();

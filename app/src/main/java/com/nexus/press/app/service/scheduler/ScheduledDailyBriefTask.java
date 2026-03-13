@@ -5,7 +5,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
-import com.nexus.press.app.config.property.TelegramDeliveryProperties;
+import com.nexus.press.app.config.property.TelegramProperties;
 import com.nexus.press.app.service.delivery.DailyBriefDeliveryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,19 +19,20 @@ import org.springframework.stereotype.Component;
 public class ScheduledDailyBriefTask {
 
 	private final DailyBriefDeliveryService dailyBriefDeliveryService;
-	private final TelegramDeliveryProperties telegramDeliveryProperties;
+	private final TelegramProperties telegramProperties;
 	private Disposable subscription;
 
 	@EventListener(ApplicationReadyEvent.class)
 	public void start() {
-		if (!telegramDeliveryProperties.isEnabled()) {
-			log.info("Планировщик daily brief отключен (press.delivery.telegram.enabled=false)");
+		final TelegramProperties.Delivery delivery = telegramProperties.delivery();
+		if (!delivery.enabled()) {
+			log.info("Планировщик daily brief отключен (platform.telegram.delivery.enabled=false)");
 			return;
 		}
 
-		final Duration interval = telegramDeliveryProperties.getInterval() == null
+		final Duration interval = delivery.interval() == null
 			? Duration.ofHours(24)
-			: telegramDeliveryProperties.getInterval();
+			: delivery.interval();
 
 		subscription = Flux.interval(Duration.ofSeconds(30), interval)
 			.concatMap(tick -> dailyBriefDeliveryService.deliverNow()

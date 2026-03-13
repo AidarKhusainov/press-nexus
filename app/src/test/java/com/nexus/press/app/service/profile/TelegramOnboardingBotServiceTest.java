@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import com.nexus.press.app.config.property.TelegramDeliveryProperties;
+import com.nexus.press.app.config.property.TelegramProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
@@ -40,12 +40,11 @@ class TelegramOnboardingBotServiceTest {
 	private AppMetrics appMetrics;
 
 	private TelegramOnboardingBotService service;
-	private TelegramDeliveryProperties props;
+	private TelegramProperties props;
 
 	@BeforeEach
 	void setUp() {
-		props = new TelegramDeliveryProperties();
-		props.setBotToken("bot-token");
+		props = new TelegramProperties(null, new TelegramProperties.Bot("bot-token"), null, null);
 		service = new TelegramOnboardingBotService(
 			userProfileService,
 			telegramDeliveryService,

@@ -23,8 +23,8 @@
 6) (Planned) Storage & Search: index into storage (ES/OpenSearch/PG+pgvector).
 
 ## Configuration and Environment
-- AI transport/config: `http-client.clients.*` in `application.properties:1`; summarization provider is selected via `press.ai.summarization.provider`, and provider models/keys are configured рядом with it.
-- HTTP clients: `http-client.clients.*` (base-url, timeouts, retries) — tuned per source.
+- AI transport/config: external integrations are grouped under `platform.<name>.*` in `application.properties`; summarization provider is selected via `press.ai.summarization.provider`, and provider models/keys live next to each platform transport config.
+- HTTP clients: `platform.<name>.http.*` (base-url, timeouts, retries) — tuned per source.
 - Commands: build `./mvnw clean verify`, run `./mvnw -pl app spring-boot:run`, tests `./mvnw test`.
 
 ## "Smart Folders" (Design)

@@ -48,7 +48,7 @@ class GeminiSummarizationServiceTest {
 					}
 					""");
 			}),
-			new GeminiProperties("gemini-key", "gemini-2.5-flash")
+			new GeminiProperties(null, "gemini-key", "gemini-2.5-flash")
 		);
 
 		final String summary = service.summarize("Исходный текст", "ru").block();

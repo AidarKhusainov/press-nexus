@@ -6,7 +6,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
-import com.nexus.press.app.config.property.TelegramDeliveryProperties;
+import com.nexus.press.app.config.property.TelegramProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.brief.DailyBriefFormatter;
 import com.nexus.press.app.service.brief.DailyBriefService;
@@ -29,18 +29,19 @@ public class DailyBriefDeliveryService {
 	private final DailyBriefService dailyBriefService;
 	private final DailyBriefFormatter dailyBriefFormatter;
 	private final TelegramDeliveryService telegramDeliveryService;
-	private final TelegramDeliveryProperties telegramDeliveryProperties;
+	private final TelegramProperties telegramProperties;
 	private final UserProfileService userProfileService;
 	private final AppMetrics appMetrics;
 
 	public Mono<Integer> deliverNow() {
+		final TelegramProperties.Delivery delivery = telegramProperties.delivery();
 		final var timerSample = appMetrics.startJobTimer();
-		if (!telegramDeliveryProperties.isEnabled()) {
+		if (!delivery.enabled()) {
 			appMetrics.jobSuccess("daily_brief_delivery", timerSample);
 			return Mono.just(0);
 		}
-		if (!StringUtils.hasText(telegramDeliveryProperties.getBotToken())) {
-			log.warn("Доставка daily brief включена, но press.delivery.telegram.bot-token не задан");
+		if (!StringUtils.hasText(botToken())) {
+			log.warn("Доставка daily brief включена, но platform.telegram.bot.token не задан");
 			appMetrics.jobSuccess("daily_brief_delivery", timerSample);
 			return Mono.just(0);
 		}
@@ -73,7 +74,8 @@ public class DailyBriefDeliveryService {
 	}
 
 	private Flux<Integer> deliverLegacyChatIds() {
-		final List<String> chatIds = telegramDeliveryProperties.getChatIds().stream()
+		final TelegramProperties.Delivery delivery = telegramProperties.delivery();
+		final List<String> chatIds = delivery.chatIds().stream()
 			.filter(StringUtils::hasText)
 			.map(String::strip)
 			.distinct()
@@ -85,9 +87,9 @@ public class DailyBriefDeliveryService {
 
 		return dailyBriefService
 			.buildBrief(
-				telegramDeliveryProperties.getLookback(),
-				telegramDeliveryProperties.getMaxItems() == null ? 7 : telegramDeliveryProperties.getMaxItems(),
-				telegramDeliveryProperties.getLanguage())
+				delivery.lookback(),
+				delivery.maxItems() == null ? 7 : delivery.maxItems(),
+				delivery.language())
 			.flatMapMany(brief -> Flux.fromIterable(chatIds)
 				.concatMap(chatId -> sendBriefToChat(chatId, brief)
 					.thenReturn(1)
@@ -101,11 +103,12 @@ public class DailyBriefDeliveryService {
 	}
 
 	private Mono<DailyBrief> buildBriefForUser(final UserProfile user, final OffsetDateTime now) {
+		final TelegramProperties.Delivery delivery = telegramProperties.delivery();
 		final Duration lookback = resolveLookback(user, now);
 		final String language = StringUtils.hasText(user.language())
 			? user.language().strip()
-			: telegramDeliveryProperties.getLanguage();
-		final int maxItems = telegramDeliveryProperties.getMaxItems() == null ? 7 : telegramDeliveryProperties.getMaxItems();
+			: delivery.language();
+		final int maxItems = delivery.maxItems() == null ? 7 : delivery.maxItems();
 
 		return dailyBriefService.buildBrief(lookback, maxItems, language, user.topics());
 	}
@@ -122,8 +125,9 @@ public class DailyBriefDeliveryService {
 	private Duration clampLookback(final Duration duration) {
 		final Duration min = Duration.ofHours(6);
 		final Duration max = Duration.ofDays(7);
+		final Duration fallbackLookback = telegramProperties.delivery().lookback();
 		if (duration == null || duration.isNegative() || duration.isZero()) {
-			return telegramDeliveryProperties.getLookback() == null ? Duration.ofHours(24) : telegramDeliveryProperties.getLookback();
+			return fallbackLookback == null ? Duration.ofHours(24) : fallbackLookback;
 		}
 		if (duration.compareTo(min) < 0) {
 			return min;
@@ -135,7 +139,7 @@ public class DailyBriefDeliveryService {
 	}
 
 	private Mono<Void> sendBriefToChat(final String chatId, final DailyBrief brief) {
-		final String botToken = telegramDeliveryProperties.getBotToken();
+		final String botToken = botToken();
 		final Mono<Void> header = telegramDeliveryService.sendMessage(
 			botToken,
 			chatId,
@@ -157,7 +161,7 @@ public class DailyBriefDeliveryService {
 	}
 
 	private Mono<Void> sendBriefCard(final String chatId, final DailyBriefItem item, final int index) {
-		final String botToken = telegramDeliveryProperties.getBotToken();
+		final String botToken = botToken();
 		return telegramDeliveryService.sendMessage(
 			botToken,
 			chatId,
@@ -180,5 +184,9 @@ public class DailyBriefDeliveryService {
 				)
 			)
 		);
+	}
+
+	private String botToken() {
+		return telegramProperties.bot().token();
 	}
 }

@@ -8,7 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import com.nexus.press.app.config.property.TelegramDeliveryProperties;
+import com.nexus.press.app.config.property.TelegramProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.delivery.TelegramDeliveryService;
 import com.nexus.press.app.service.feedback.FeedbackEventService;
@@ -27,7 +27,7 @@ public class TelegramOnboardingBotService {
 
 	private final UserProfileService userProfileService;
 	private final TelegramDeliveryService telegramDeliveryService;
-	private final TelegramDeliveryProperties telegramDeliveryProperties;
+	private final TelegramProperties telegramProperties;
 	private final FeedbackEventService feedbackEventService;
 	private final AppMetrics appMetrics;
 
@@ -319,12 +319,12 @@ public class TelegramOnboardingBotService {
 		final String text,
 		final Map<String, Object> replyMarkup
 	) {
-		if (!StringUtils.hasText(telegramDeliveryProperties.getBotToken())) {
+		if (!StringUtils.hasText(botToken())) {
 			log.warn("Получен onboarding update, но bot token не задан");
 			return Mono.empty();
 		}
 		return telegramDeliveryService.sendMessage(
-			telegramDeliveryProperties.getBotToken(),
+			botToken(),
 			chatId,
 			text,
 			replyMarkup
@@ -332,15 +332,19 @@ public class TelegramOnboardingBotService {
 	}
 
 	private Mono<Void> answerCallback(final String callbackId, final String text) {
-		if (!StringUtils.hasText(telegramDeliveryProperties.getBotToken())) {
+		if (!StringUtils.hasText(botToken())) {
 			log.warn("Получен callback update, но bot token не задан");
 			return Mono.empty();
 		}
 		return telegramDeliveryService.answerCallbackQuery(
-			telegramDeliveryProperties.getBotToken(),
+			botToken(),
 			callbackId,
 			text
 		);
+	}
+
+	private String botToken() {
+		return telegramProperties.bot().token();
 	}
 
 	private Map<String, Object> buildFeedbackPayload(

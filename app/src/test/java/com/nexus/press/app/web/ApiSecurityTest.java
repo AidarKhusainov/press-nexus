@@ -60,7 +60,7 @@ import static org.mockito.BDDMockito.given;
 @TestPropertySource(properties = {
 	"press.security.internal-api.enabled=true",
 	"press.security.internal-api.api-key=test-internal-key",
-	"press.security.telegram-webhook.secret-token=test-telegram-secret"
+	"platform.telegram.webhook.secret-token=test-telegram-secret"
 })
 class ApiSecurityTest {
 

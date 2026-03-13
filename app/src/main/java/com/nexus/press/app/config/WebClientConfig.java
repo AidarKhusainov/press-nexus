@@ -5,16 +5,24 @@ import io.netty.handler.timeout.ReadTimeoutHandler;
 import reactor.netty.http.client.HttpClient;
 import reactor.util.retry.Retry;
 import java.io.IOException;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import com.nexus.press.app.config.property.CloudflareWorkersAiProperties;
+import com.nexus.press.app.config.property.GeminiProperties;
+import com.nexus.press.app.config.property.GroqProperties;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
+import com.nexus.press.app.config.property.MistralProperties;
+import com.nexus.press.app.config.property.NewsPlatformProperties;
+import com.nexus.press.app.config.property.OllamaProperties;
+import com.nexus.press.app.config.property.TelegramProperties;
 import com.nexus.press.app.observability.AppMetrics;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -26,15 +34,51 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @Slf4j
-@RequiredArgsConstructor
 @Configuration
 public class WebClientConfig {
 
 	private static final String REQUEST_ID_CONTEXT_KEY = "requestId";
 
-	private final HttpClientProperties properties;
+	private final Map<HttpClientName, HttpClientProperties.ClientConfig> clientProperties;
 	private final AppMetrics appMetrics;
 	private final Map<HttpClientName, WebClient> clientCache = new ConcurrentHashMap<>();
+
+	@Autowired
+	public WebClientConfig(
+		final OllamaProperties ollamaProperties,
+		final NewsPlatformProperties newsPlatformProperties,
+		final GeminiProperties geminiProperties,
+		final GroqProperties groqProperties,
+		final CloudflareWorkersAiProperties cloudflareWorkersAiProperties,
+		final MistralProperties mistralProperties,
+		final TelegramProperties telegramProperties,
+		final AppMetrics appMetrics
+	) {
+		this(
+			buildClientProperties(
+				ollamaProperties,
+				newsPlatformProperties,
+				geminiProperties,
+				groqProperties,
+				cloudflareWorkersAiProperties,
+				mistralProperties,
+				telegramProperties
+			),
+			appMetrics
+		);
+	}
+
+	public WebClientConfig(final HttpClientProperties properties, final AppMetrics appMetrics) {
+		this(properties.clients(), appMetrics);
+	}
+
+	private WebClientConfig(
+		final Map<HttpClientName, HttpClientProperties.ClientConfig> clientProperties,
+		final AppMetrics appMetrics
+	) {
+		this.clientProperties = Map.copyOf(clientProperties);
+		this.appMetrics = appMetrics;
+	}
 
 	/**
 	 * Получить или создать WebClient по имени.
@@ -47,7 +91,7 @@ public class WebClientConfig {
 	 * Создание настроенного WebClient c таймаутами, ретраями и логами.
 	 */
 	private WebClient createWebClient(final HttpClientName clientName) {
-		final var config = properties.clients().get(clientName);
+		final var config = clientProperties.get(clientName);
 		if (config == null) {
 			throw new IllegalArgumentException("Configuration for WebClient '" + clientName + "' not found");
 		}
@@ -149,5 +193,25 @@ public class WebClientConfig {
 	private boolean isExpectedExternalCallError(final Throwable throwable) {
 		return throwable instanceof WebClientRequestException
 			|| throwable instanceof WebClientResponseException;
+	}
+
+	private static Map<HttpClientName, HttpClientProperties.ClientConfig> buildClientProperties(
+		final OllamaProperties ollamaProperties,
+		final NewsPlatformProperties newsPlatformProperties,
+		final GeminiProperties geminiProperties,
+		final GroqProperties groqProperties,
+		final CloudflareWorkersAiProperties cloudflareWorkersAiProperties,
+		final MistralProperties mistralProperties,
+		final TelegramProperties telegramProperties
+	) {
+		final Map<HttpClientName, HttpClientProperties.ClientConfig> properties = new EnumMap<>(HttpClientName.class);
+		properties.put(HttpClientName.OLLAMA, ollamaProperties.http());
+		properties.put(HttpClientName.NEWS, newsPlatformProperties.http());
+		properties.put(HttpClientName.GEMINI, geminiProperties.http());
+		properties.put(HttpClientName.GROQ, groqProperties.http());
+		properties.put(HttpClientName.CLOUDFLARE_WORKERS_AI, cloudflareWorkersAiProperties.http());
+		properties.put(HttpClientName.MISTRAL, mistralProperties.http());
+		properties.put(HttpClientName.TELEGRAM, telegramProperties.http());
+		return properties;
 	}
 }
