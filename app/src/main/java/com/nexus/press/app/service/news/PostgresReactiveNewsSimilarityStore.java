@@ -25,21 +25,22 @@ public class PostgresReactiveNewsSimilarityStore implements ReactiveNewsSimilari
         return Mono.empty();
     }
 
-    @Override
-    public Flux<NewsSimilarityStore.SimilarItem> topSimilar(final String id, final int topN, final double minScore) {
-        // KNN по индексу pgvector: упорядочиваем по косинусной дистанции и фильтруем по порогу схожести
-        final String sql =
-            "SELECT n.news_id AS neighbor, 1 - (n.embedding <#> q.embedding) AS score " +
-            "FROM news_embedding n " +
-            "JOIN (SELECT embedding FROM news_embedding WHERE news_id = :id) q ON true " +
-            "WHERE n.news_id <> :id " +
-            "  AND 1 - (n.embedding <#> q.embedding) >= :min " +
-            "ORDER BY n.embedding <#> q.embedding " +
-            "LIMIT :lim";
-        return db.sql(sql)
-            .bind("id", id)
-            .bind("min", minScore)
-            .bind("lim", topN)
+	@Override
+	public Flux<NewsSimilarityStore.SimilarItem> topSimilar(final String id, final int topN, final double minScore) {
+		// Эмбеддинги уже L2-нормализованы, поэтому используем cosine distance (<=>) и
+		// переводим её обратно в cosine similarity через 1 - distance.
+		final String sql =
+			"SELECT n.news_id AS neighbor, 1 - (n.embedding <=> q.embedding) AS score " +
+			"FROM news_embedding n " +
+			"JOIN (SELECT embedding FROM news_embedding WHERE news_id = :id) q ON true " +
+			"WHERE n.news_id <> :id " +
+			"  AND 1 - (n.embedding <=> q.embedding) >= :min " +
+			"ORDER BY n.embedding <=> q.embedding " +
+			"LIMIT :lim";
+		return db.sql(sql)
+			.bind("id", id)
+			.bind("min", minScore)
+			.bind("lim", topN)
             .map(PostgresReactiveNewsSimilarityStore::mapSimilar)
             .all();
     }
@@ -67,21 +68,21 @@ public class PostgresReactiveNewsSimilarityStore implements ReactiveNewsSimilari
         return db.sql("SELECT news_id FROM news_embedding").map((row, md) -> row.get(0, String.class)).all();
     }
 
-    @Override
-    public Flux<NewsSimilarityStore.SimilarItem> neighbors(final String id, final double minScore) {
-        // Для построения графа связности достаточно ограниченного числа ближайших соседей.
-        final int neighborK = 100; // разумное K по умолчанию для кластеризации
-        final String sql =
-            "SELECT n.news_id AS neighbor, 1 - (n.embedding <#> q.embedding) AS score " +
-            "FROM news_embedding n " +
-            "JOIN (SELECT embedding FROM news_embedding WHERE news_id = :id) q ON true " +
-            "WHERE n.news_id <> :id " +
-            "  AND 1 - (n.embedding <#> q.embedding) >= :min " +
-            "ORDER BY n.embedding <#> q.embedding " +
-            "LIMIT :lim";
-        return db.sql(sql)
-            .bind("id", id)
-            .bind("min", minScore)
+	@Override
+	public Flux<NewsSimilarityStore.SimilarItem> neighbors(final String id, final double minScore) {
+		// Для построения графа связности достаточно ограниченного числа ближайших соседей.
+		final int neighborK = 100; // разумное K по умолчанию для кластеризации
+		final String sql =
+			"SELECT n.news_id AS neighbor, 1 - (n.embedding <=> q.embedding) AS score " +
+			"FROM news_embedding n " +
+			"JOIN (SELECT embedding FROM news_embedding WHERE news_id = :id) q ON true " +
+			"WHERE n.news_id <> :id " +
+			"  AND 1 - (n.embedding <=> q.embedding) >= :min " +
+			"ORDER BY n.embedding <=> q.embedding " +
+			"LIMIT :lim";
+		return db.sql(sql)
+			.bind("id", id)
+			.bind("min", minScore)
             .bind("lim", neighborK)
             .map(PostgresReactiveNewsSimilarityStore::mapSimilar)
             .all();

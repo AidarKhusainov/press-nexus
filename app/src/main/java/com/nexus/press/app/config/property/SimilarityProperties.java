@@ -20,6 +20,5 @@ public class SimilarityProperties {
 	/**
 	 * Порог для объединения в кластеры (может отличаться от minScore).
 	 */
-	private double clusterMinScore = 0.70;
+	private double clusterMinScore = 0.95;
 }
-

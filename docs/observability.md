@@ -40,3 +40,4 @@ Any new critical flow must include at least one metric and one actionable log ev
 - Summarization provider rollouts must be validated against `press_http_client_duration_seconds{client=~"GEMINI|GROQ|CLOUDFLARE_WORKERS_AI|MISTRAL"}` and matching external error metrics before switching `press.ai.summarization.provider` in production.
 - Backlog dashboards and alerts should distinguish `pending`/`in_progress` from `failed`; only active backlog should drive discovery throttling.
 - Readiness must reflect app/runtime dependencies; backlog is an alert/SLO signal, not a readiness gate.
+- Similarity threshold changes must be validated with cluster-size distribution checks so representative-news selection does not collapse into giant connected components.
