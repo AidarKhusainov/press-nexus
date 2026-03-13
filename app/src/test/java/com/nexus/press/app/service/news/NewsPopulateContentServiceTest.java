@@ -34,14 +34,16 @@ class NewsPopulateContentServiceTest {
 				return Mono.error(new RuntimeException("parser error"));
 			}
 		};
-		final var service = new NewsPopulateContentService(List.of(processor), persistence, APP_METRICS);
+		final var service = new NewsPopulateContentService(List.of(processor), new NewsContentCleaner(), persistence, APP_METRICS);
 
 		final var result = service.populate(source).block();
 
 		assertNotNull(result);
 		assertEquals("fallback content", result.getRawContent());
+		assertEquals("Title id-1\n\nfallback content", result.getCleanContent());
 		assertNotNull(persistence.lastUpsertRequest);
 		assertEquals("fallback content", persistence.lastUpsertRequest.getContentRaw());
+		assertEquals("Title id-1\n\nfallback content", persistence.lastUpsertRequest.getContentClean());
 		assertEquals(ProcessingStatus.DONE, persistence.lastUpsertRequest.getStatusContent());
 		assertEquals(ProcessingStatus.PENDING, persistence.lastUpsertRequest.getStatusEmbedding());
 		assertEquals(ProcessingStatus.PENDING, persistence.lastUpsertRequest.getStatusSummary());
@@ -64,7 +66,7 @@ class NewsPopulateContentServiceTest {
 				return Mono.just(news.withRawContent("full content"));
 			}
 		};
-		final var service = new NewsPopulateContentService(List.of(processor), persistence, APP_METRICS);
+		final var service = new NewsPopulateContentService(List.of(processor), new NewsContentCleaner(), persistence, APP_METRICS);
 
 		final var result = service.populate(source).block();
 
@@ -76,7 +78,7 @@ class NewsPopulateContentServiceTest {
 	@Test
 	void populateUsesDescriptionAsFallbackWhenNoProcessorRegistered() {
 		final var persistence = new StubPersistenceService();
-		final var serviceWithoutProcessor = new NewsPopulateContentService(List.of(), persistence, APP_METRICS);
+		final var serviceWithoutProcessor = new NewsPopulateContentService(List.of(), new NewsContentCleaner(), persistence, APP_METRICS);
 		final var source = sampleNews("id-3", "plain description");
 
 		final var result = serviceWithoutProcessor.populate(source).block();
@@ -84,6 +86,7 @@ class NewsPopulateContentServiceTest {
 		assertNotNull(result);
 		assertEquals("plain description", result.getRawContent());
 		assertEquals("plain description", persistence.lastUpsertRequest.getContentRaw());
+		assertEquals("Title id-3\n\nplain description", persistence.lastUpsertRequest.getContentClean());
 	}
 
 	@Test
@@ -128,12 +131,46 @@ class NewsPopulateContentServiceTest {
 			}
 		};
 
-		final var service = new NewsPopulateContentService(List.of(genericProcessor, specificProcessor), persistence, APP_METRICS);
+		final var service = new NewsPopulateContentService(List.of(genericProcessor, specificProcessor), new NewsContentCleaner(), persistence, APP_METRICS);
 		final var result = service.populate(source).block();
 
 		assertNotNull(result);
 		assertEquals("specific", result.getRawContent());
 		assertEquals(List.of("specific"), calls);
+	}
+
+	@Test
+	void populateBuildsCleanContentWithoutBoilerplateTail() {
+		final var source = sampleNews("id-5", "fallback");
+		final var persistence = new StubPersistenceService();
+		final var processor = new NewsPopulateContentProcessor() {
+			@Override
+			public java.util.Set<Media> getSupportedMedia() {
+				return java.util.Set.of(Media.BBC);
+			}
+
+			@Override
+			public Mono<RawNews> process(final RawNews news) {
+				return Mono.just(news.withRawContent(
+					"Lead paragraph with actual article text and enough detail to keep the cleaner focused.\n\n"
+						+ "Second paragraph continues the story with more substance and context for the reader.\n\n"
+						+ "Читайте также\n\n"
+						+ "Еще один посторонний блок"
+				));
+			}
+		};
+
+		final var service = new NewsPopulateContentService(List.of(processor), new NewsContentCleaner(), persistence, APP_METRICS);
+
+		final var result = service.populate(source).block();
+
+		assertNotNull(result);
+		assertEquals(
+			"Lead paragraph with actual article text and enough detail to keep the cleaner focused.\n\n"
+				+ "Second paragraph continues the story with more substance and context for the reader.",
+			result.getCleanContent()
+		);
+		assertEquals(result.getCleanContent(), persistence.lastUpsertRequest.getContentClean());
 	}
 
 	private static RawNews sampleNews(final String id, final String description) {

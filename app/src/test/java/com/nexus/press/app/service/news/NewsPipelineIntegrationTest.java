@@ -73,7 +73,7 @@ class NewsPipelineIntegrationTest {
 
 		final var persistenceService = new NewsPersistenceService(db);
 		final var processor = new GenericPopulateContentProcessor(stubWebClientConfig((request) -> okResponse(html)));
-		final var populateService = new NewsPopulateContentService(List.of(processor), persistenceService, APP_METRICS);
+		final var populateService = new NewsPopulateContentService(List.of(processor), new NewsContentCleaner(), persistenceService, APP_METRICS);
 
 		final var id = "it-" + UUID.randomUUID();
 		final var raw = RawNews.builder()
@@ -90,9 +90,10 @@ class NewsPipelineIntegrationTest {
 		assertNotNull(saved);
 		assertTrue(saved.getRawContent().contains("Integration paragraph one"));
 		assertTrue(saved.getRawContent().contains("Integration paragraph two"));
+		assertEquals(saved.getRawContent(), saved.getCleanContent());
 
 		final var row = db.sql("""
-			SELECT media, url, content_raw, status_content, status_embedding, status_summary
+			SELECT media, url, content_raw, content_clean, status_content, status_embedding, status_summary
 			FROM news
 			WHERE id = :id
 			""")
@@ -101,6 +102,7 @@ class NewsPipelineIntegrationTest {
 				r.get("media", String.class),
 				r.get("url", String.class),
 				r.get("content_raw", String.class),
+				r.get("content_clean", String.class),
 				r.get("status_content", String.class),
 				r.get("status_embedding", String.class),
 				r.get("status_summary", String.class)
@@ -112,6 +114,7 @@ class NewsPipelineIntegrationTest {
 		assertEquals("BBC", row.media());
 		assertEquals("https://example.com/article", row.url());
 		assertTrue(row.contentRaw().contains("Integration paragraph one"));
+		assertEquals(row.contentRaw(), row.contentClean());
 		assertEquals("DONE", row.statusContent());
 		assertEquals("PENDING", row.statusEmbedding());
 		assertEquals("PENDING", row.statusSummary());
@@ -296,6 +299,7 @@ class NewsPipelineIntegrationTest {
 		String media,
 		String url,
 		String contentRaw,
+		String contentClean,
 		String statusContent,
 		String statusEmbedding,
 		String statusSummary

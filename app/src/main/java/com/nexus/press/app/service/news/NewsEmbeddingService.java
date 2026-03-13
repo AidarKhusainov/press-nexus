@@ -30,7 +30,7 @@ public class NewsEmbeddingService {
 		log.info("Получение эмбеддинга новости: id={} title={}", rawNews.getId(), rawNews.getTitle());
 
 		return newsPersistenceService.updateStatusEmbedding(rawNews.getId(), ProcessingStatus.IN_PROGRESS)
-			.then(embeddingService.embed(rawNews.getRawContent()))
+			.then(embeddingService.embed(contentForEmbedding(rawNews)))
 			.timeout(Duration.ofMinutes(5))
 			.flatMap(embedding -> {
 				log.info("Готов эмбеддинг: id={} dims={}", rawNews.getId(), embedding.length);
@@ -41,6 +41,7 @@ public class NewsEmbeddingService {
 						.title(rawNews.getTitle())
 						.description(rawNews.getDescription())
 						.rawContent(rawNews.getRawContent())
+						.cleanContent(rawNews.getCleanContent())
 						.source(rawNews.getSource())
 						.publishedDate(rawNews.getPublishedDate())
 						.language(rawNews.getLanguage())
@@ -71,7 +72,7 @@ public class NewsEmbeddingService {
 
 		log.info("Старт batch-эмбеддинга: size={}", batch.size());
 
-		return embeddingService.embedBatch(batch.stream().map(RawNews::getRawContent).toList())
+		return embeddingService.embedBatch(batch.stream().map(this::contentForEmbedding).toList())
 			.flatMapMany(embeddings -> persistBatch(batch, embeddings, timerSamples))
 			.collectList()
 			.onErrorResume(ex -> {
@@ -107,6 +108,7 @@ public class NewsEmbeddingService {
 				.title(rawNews.getTitle())
 				.description(rawNews.getDescription())
 				.rawContent(rawNews.getRawContent())
+				.cleanContent(rawNews.getCleanContent())
 				.source(rawNews.getSource())
 				.publishedDate(rawNews.getPublishedDate())
 				.language(rawNews.getLanguage())
@@ -120,5 +122,12 @@ public class NewsEmbeddingService {
 				return newsPersistenceService.updateStatusEmbedding(rawNews.getId(), ProcessingStatus.FAILED)
 					.then(Mono.empty());
 			});
+	}
+
+	private String contentForEmbedding(final RawNews news) {
+		if (news.getCleanContent() != null && !news.getCleanContent().isBlank()) {
+			return news.getCleanContent();
+		}
+		return news.getRawContent();
 	}
 }

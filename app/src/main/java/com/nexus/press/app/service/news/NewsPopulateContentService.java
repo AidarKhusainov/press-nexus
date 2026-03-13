@@ -16,17 +16,20 @@ import org.springframework.util.StringUtils;
 public class NewsPopulateContentService {
 
 	private final List<NewsPopulateContentProcessor> populateContentProcessors;
+	private final NewsContentCleaner newsContentCleaner;
 	private final NewsPersistenceService newsPersistenceService;
 	private final AppMetrics appMetrics;
 
 	public NewsPopulateContentService(
 		final List<NewsPopulateContentProcessor> populateContentProcessors,
+		final NewsContentCleaner newsContentCleaner,
 		final NewsPersistenceService newsPersistenceService,
 		final AppMetrics appMetrics
 	) {
 		this.populateContentProcessors = populateContentProcessors.stream()
 			.sorted(Comparator.comparingInt(NewsPopulateContentProcessor::getPriority).reversed())
 			.toList();
+		this.newsContentCleaner = newsContentCleaner;
 		this.newsPersistenceService = newsPersistenceService;
 		this.appMetrics = appMetrics;
 	}
@@ -71,6 +74,7 @@ public class NewsPopulateContentService {
 	}
 
 	private Mono<RawNews> persist(final RawNews news) {
+		final String cleanContent = newsContentCleaner.clean(news.getTitle(), news.getDescription(), news.getRawContent());
 		final var req = NewsUpsertRequest.builder()
 			.id(news.getId())
 			.media(news.getSource().name())
@@ -82,7 +86,7 @@ public class NewsPopulateContentService {
 			.publishedAt(news.getPublishedDate())
 			.fetchedAt(java.time.OffsetDateTime.now())
 			.contentRaw(news.getRawContent())
-			.contentClean(news.getRawContent())
+			.contentClean(cleanContent)
 			.statusContent(ProcessingStatus.DONE)
 			.statusEmbedding(ProcessingStatus.PENDING)
 			.statusSummary(ProcessingStatus.PENDING)
@@ -95,6 +99,7 @@ public class NewsPopulateContentService {
 				.title(news.getTitle())
 				.description(news.getDescription())
 				.rawContent(news.getRawContent())
+				.cleanContent(cleanContent)
 				.source(news.getSource())
 				.publishedDate(news.getPublishedDate())
 				.language(news.getLanguage())

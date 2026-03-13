@@ -33,6 +33,7 @@ class NewsEmbeddingServiceTest {
 		assertEquals(List.of(ProcessingStatus.IN_PROGRESS, ProcessingStatus.DONE), persistence.statusHistory);
 		assertEquals("id-1", similarityStore.lastId);
 		assertEquals(3, similarityStore.lastEmbedding.length);
+		assertEquals("Clean content id-1", embeddingService.lastText);
 		assertNull(result.getContentSummary());
 	}
 
@@ -53,6 +54,7 @@ class NewsEmbeddingServiceTest {
 		assertEquals(List.of(ProcessingStatus.DONE, ProcessingStatus.DONE), persistence.statusHistory);
 		assertEquals(List.of("id-1", "id-2"), similarityStore.ids);
 		assertEquals(2, similarityStore.embeddings.size());
+		assertEquals(List.of("Clean content id-1", "Clean content id-2"), embeddingService.lastBatchTexts);
 	}
 
 	private static RawNews sampleRawNews(final String id) {
@@ -62,6 +64,7 @@ class NewsEmbeddingServiceTest {
 			.title("Title " + id)
 			.description("Description")
 			.rawContent("Raw content " + id)
+			.cleanContent("Clean content " + id)
 			.source(Media.BBC)
 			.publishedDate(OffsetDateTime.parse("2026-02-01T12:00:00Z"))
 			.language("en")
@@ -72,6 +75,8 @@ class NewsEmbeddingServiceTest {
 
 		private final float[] embedding;
 		private final List<float[]> embeddings;
+		private String lastText;
+		private List<String> lastBatchTexts = List.of();
 
 		private StubEmbeddingService(final float[] embedding) {
 			this.embedding = embedding;
@@ -85,11 +90,13 @@ class NewsEmbeddingServiceTest {
 
 		@Override
 		public Mono<float[]> embed(final String text) {
+			lastText = text;
 			return Mono.just(embedding);
 		}
 
 		@Override
 		public Mono<List<float[]>> embedBatch(final List<String> texts) {
+			lastBatchTexts = texts;
 			return Mono.just(embeddings);
 		}
 	}

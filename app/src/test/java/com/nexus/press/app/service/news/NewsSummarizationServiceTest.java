@@ -35,6 +35,7 @@ class NewsSummarizationServiceTest {
 		assertEquals(1, persistence.savedSummaryCalls);
 		assertEquals("ru", persistence.savedLang);
 		assertEquals("Краткая выжимка по событию.", persistence.savedSummary);
+		assertEquals("Clean content id-1", summarizer.lastText);
 	}
 
 	@Test
@@ -49,6 +50,7 @@ class NewsSummarizationServiceTest {
 		assertEquals("Title id-2", result.getContentSummary());
 		assertEquals("Title id-2", persistence.savedSummary);
 		assertEquals("ru", persistence.savedLang);
+		assertEquals("Clean content id-2", summarizer.lastText);
 	}
 
 	private static ProcessedNews sampleProcessedNews(final String id, final String language) {
@@ -58,6 +60,7 @@ class NewsSummarizationServiceTest {
 			.title("Title " + id)
 			.description("Description")
 			.rawContent("Raw content " + id)
+			.cleanContent("Clean content " + id)
 			.source(Media.BBC)
 			.publishedDate(OffsetDateTime.parse("2026-02-01T12:00:00Z"))
 			.language(language)
@@ -67,6 +70,7 @@ class NewsSummarizationServiceTest {
 	private static final class StubSummarizationService implements SummarizationService {
 
 		private final String response;
+		private String lastText;
 
 		private StubSummarizationService(final String response) {
 			this.response = response;
@@ -74,6 +78,7 @@ class NewsSummarizationServiceTest {
 
 		@Override
 		public Mono<String> summarize(final String text, final String lang) {
+			lastText = text;
 			return Mono.just(response);
 		}
 	}

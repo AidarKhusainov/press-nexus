@@ -60,7 +60,7 @@ public class NewsFetchService {
 			.build();
 
 		return newsPersistenceService.upsertDiscovered(req)
-			.thenReturn(news.withRawContent(fallbackContent));
+			.thenReturn(news.withRawContent(fallbackContent).withCleanContent(fallbackContent));
 	}
 
 	private String discoveryContent(final RawNews news) {

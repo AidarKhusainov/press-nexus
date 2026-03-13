@@ -23,6 +23,8 @@ public class RawNews {
 	private final String description;
 	@With
 	private final String rawContent;
+	@With
+	private final String cleanContent;
 	private final Media source;
 	private final OffsetDateTime publishedDate;
 	private final String language;

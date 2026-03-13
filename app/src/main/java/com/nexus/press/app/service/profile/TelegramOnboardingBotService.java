@@ -171,6 +171,7 @@ public class TelegramOnboardingBotService {
 		);
 
 		return userProfileService.registerTelegramUser(userContext)
+			.then(answerCallback(callback.callbackId(), feedbackAckText(feedback.eventType().dbValue())))
 			.then(applyFeedbackSideEffectsBeforeEvent(callback.chatId(), feedback.eventType()))
 			.then(feedbackEventService.recordTelegramFeedback(
 				callback.chatId(),
@@ -180,7 +181,6 @@ public class TelegramOnboardingBotService {
 				buildFeedbackPayload(callback, feedback, sourceUrl)
 			))
 			.then(applyFeedbackSideEffectsAfterEvent(callback.chatId(), feedback.eventType(), sourceUrl))
-			.then(answerCallback(callback.callbackId(), feedbackAckText(feedback.eventType().dbValue())))
 			.onErrorResume(ex -> {
 				log.warn("Не удалось обработать feedback callback data={}", callback.data(), ex);
 				return answerCallback(callback.callbackId(), "Не сохранил feedback, попробуй еще раз.");

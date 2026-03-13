@@ -42,14 +42,14 @@ public class NewsSummarizationService {
 		final String modelName = summarizeModelName();
 
 		return newsPersistenceService.updateStatusSummary(news.getId(), ProcessingStatus.IN_PROGRESS)
-			.then(summarizationService.summarize(news.getRawContent(), lang))
+			.then(summarizationService.summarize(contentForSummary(news), lang))
 			.map(summary -> normalizeSummary(summary, news.getTitle()))
 			.flatMap(summary -> newsPersistenceService
 				.saveNewsSummary(news.getId(), modelName, lang, summary, null)
 				.thenReturn(summary))
 			.map(summary -> {
 				log.info("Новость до и после суммаризации: id={} title={} \nДО: {}\n\nПОСЛЕ: \n{}\n",
-					news.getId(), news.getTitle(), news.getRawContent(), summary);
+					news.getId(), news.getTitle(), contentForSummary(news), summary);
 				return withSummary(news, summary);
 			})
 			.flatMap(n -> newsPersistenceService.updateStatusSummary(n.getId(), ProcessingStatus.DONE)
@@ -93,10 +93,18 @@ public class NewsSummarizationService {
 			.title(source.getTitle())
 			.description(source.getDescription())
 			.rawContent(source.getRawContent())
+			.cleanContent(source.getCleanContent())
 			.source(source.getSource())
 			.publishedDate(source.getPublishedDate())
 			.language(source.getLanguage())
 			.contentSummary(summary)
 			.build();
+	}
+
+	private String contentForSummary(final ProcessedNews news) {
+		if (news.getCleanContent() != null && !news.getCleanContent().isBlank()) {
+			return news.getCleanContent();
+		}
+		return news.getRawContent();
 	}
 }

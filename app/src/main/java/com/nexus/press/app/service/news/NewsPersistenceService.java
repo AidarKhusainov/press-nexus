@@ -148,7 +148,7 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.media, n.published_at, n.language
 			""";
 
 		return db.sql(sql)
@@ -166,8 +166,8 @@ public class NewsPersistenceService {
 				SELECT n.id
 				FROM news n
 				WHERE n.status_content = 'DONE'
-				  AND n.content_raw IS NOT NULL
-				  AND btrim(n.content_raw) <> ''
+				  AND n.content_clean IS NOT NULL
+				  AND btrim(n.content_clean) <> ''
 				  AND (
 				       n.status_embedding = 'PENDING'
 				       OR (
@@ -192,7 +192,7 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.media, n.published_at, n.language
 			""";
 
 		return db.sql(sql)
@@ -211,8 +211,8 @@ public class NewsPersistenceService {
 				FROM news n
 				WHERE n.status_content = 'DONE'
 				  AND n.status_embedding = 'DONE'
-				  AND n.content_raw IS NOT NULL
-				  AND btrim(n.content_raw) <> ''
+				  AND n.content_clean IS NOT NULL
+				  AND btrim(n.content_clean) <> ''
 				  AND (
 				       n.status_summary = 'PENDING'
 				       OR (
@@ -233,7 +233,7 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.media, n.published_at, n.language
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.media, n.published_at, n.language
 			""";
 
 		return db.sql(sql)
@@ -251,6 +251,8 @@ public class NewsPersistenceService {
 				COUNT(*) FILTER (WHERE n.status_content = 'FAILED') AS content_failed,
 				COUNT(*) FILTER (
 					WHERE n.status_content = 'DONE'
+					  AND n.content_clean IS NOT NULL
+					  AND btrim(n.content_clean) <> ''
 					  AND (
 						   n.status_embedding = 'PENDING'
 						   OR (
@@ -264,6 +266,8 @@ public class NewsPersistenceService {
 				COUNT(*) FILTER (
 					WHERE n.status_content = 'DONE'
 					  AND n.status_embedding = 'DONE'
+					  AND n.content_clean IS NOT NULL
+					  AND btrim(n.content_clean) <> ''
 					  AND n.status_summary = 'PENDING'
 				) AS summary_pending,
 				COUNT(*) FILTER (WHERE n.status_summary = 'IN_PROGRESS') AS summary_in_progress,
@@ -488,6 +492,7 @@ public class NewsPersistenceService {
 			.title(row.get("title", String.class))
 			.description(row.get("title", String.class))
 			.rawContent(row.get("content_raw", String.class))
+			.cleanContent(row.get("content_clean", String.class))
 			.source(toMedia(mediaValue))
 			.publishedDate(row.get("published_at", OffsetDateTime.class))
 			.language(row.get("language", String.class))

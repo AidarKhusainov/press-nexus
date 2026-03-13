@@ -17,12 +17,14 @@ import com.nexus.press.app.service.feedback.FeedbackEventType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -189,6 +191,27 @@ class TelegramOnboardingBotServiceTest {
 		verify(feedbackEventService).recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.CLICK), eq("news-123"), eq("inline_button"), any());
 		verify(telegramDeliveryService).sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Источник")), isNull());
 		verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("зафиксировал")));
+	}
+
+	@Test
+	void clickCallbackAnswersBeforePersistingFeedbackAndSendingSource() {
+		when(userProfileService.registerTelegramUser(any())).thenReturn(Mono.just(profile(DigestFrequency.DAILY)));
+		when(feedbackEventService.recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.CLICK), eq("news-123"), eq("inline_button"), any()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("https://example.com/news-123")), isNull()))
+			.thenReturn(Mono.empty());
+		when(telegramDeliveryService.answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), any())).thenReturn(Mono.empty());
+
+		service.handleUpdate(callbackUpdate("fb|click|news-123", """
+			1. Заголовок
+			Источник: Example
+			https://example.com/news-123
+			""")).block();
+
+		final InOrder inOrder = inOrder(telegramDeliveryService, feedbackEventService);
+		inOrder.verify(telegramDeliveryService).answerCallbackQuery(eq("bot-token"), eq("cb-id-1"), argThat(text -> text.contains("зафиксировал")));
+		inOrder.verify(feedbackEventService).recordTelegramFeedback(eq("12345"), eq(FeedbackEventType.CLICK), eq("news-123"), eq("inline_button"), any());
+		inOrder.verify(telegramDeliveryService).sendMessage(eq("bot-token"), eq("12345"), argThat(text -> text.contains("Источник")), isNull());
 	}
 
 	@Test

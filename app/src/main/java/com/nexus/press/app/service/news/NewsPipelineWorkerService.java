@@ -153,6 +153,7 @@ public class NewsPipelineWorkerService {
 			.title(news.getTitle())
 			.description(news.getDescription())
 			.rawContent(news.getRawContent())
+			.cleanContent(news.getCleanContent())
 			.source(news.getSource())
 			.publishedDate(news.getPublishedDate())
 			.language(news.getLanguage())

@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @Slf4j
 @Service
@@ -68,6 +69,15 @@ public class TelegramDeliveryService {
 			.retrieve()
 			.bodyToMono(String.class)
 			.doOnNext(response -> log.debug("Telegram callback answer response callbackId={}: {}", callbackQueryId, response))
+			.onErrorResume(WebClientResponseException.BadRequest.class, ex -> {
+				log.warn(
+					"Telegram отклонил answerCallbackQuery callbackId={} status={} body={}",
+					callbackQueryId,
+					ex.getStatusCode().value(),
+					ex.getResponseBodyAsString()
+				);
+				return Mono.empty();
+			})
 			.then();
 	}
 
