@@ -64,7 +64,7 @@ public class NewsSummarizationService {
 	}
 
 	private String summarizeModelName() {
-		return summarizationService.getClass().getSimpleName();
+		return summarizationService.modelName();
 	}
 
 	private String normalizeLanguage(final String language) {

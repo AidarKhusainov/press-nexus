@@ -2,7 +2,7 @@
 
 ## Purpose and Vision
 - Goal: aggregate open sources ("white internet") — media, social networks, forums, blogs — normalize content, build embeddings, generate concise summaries, and automatically route materials into "smart folders" (topics) for reports and dossiers.
-- Current state: module `app` (Spring Boot, WebFlux) implements the chain for news ingestion, enrichment, embeddings, and summarization powered by Ollama.
+- Current state: module `app` (Spring Boot, WebFlux) implements the chain for news ingestion, enrichment, embeddings, and summarization with configurable providers (`Gemini`, `Groq`, `Cloudflare Workers AI`, `Mistral`; embeddings still use Ollama).
 
 ## Architecture (Current)
 - Entry point: `app/src/main/java/com/nexus/press/app/AppApplication.java:1`.
@@ -12,7 +12,7 @@
 - Scheduler: `app/src/main/java/com/nexus/press/app/service/scheduler/**`.
 - Utilities (chunking/vectors): `app/src/main/java/com/nexus/press/app/util/**`.
 - Settings: `app/src/main/resources/application.properties:1`.
-- External services: RIA, NYTimes RSS, Jina Reader; ML backend — Ollama (`docker/compose.yml:1`).
+- External services: RIA, NYTimes RSS, Jina Reader; ML backends — Ollama for embeddings and configurable hosted summarization providers.
 
 ## Data Flow (ETL)
 1) Fetch: load feeds/pages from sources.
@@ -23,7 +23,7 @@
 6) (Planned) Storage & Search: index into storage (ES/OpenSearch/PG+pgvector).
 
 ## Configuration and Environment
-- AI transport/config: `http-client.clients.OLLAMA.*` and `http-client.clients.GEMINI.*` in `application.properties:1`; models selected in services.
+- AI transport/config: `http-client.clients.*` in `application.properties:1`; summarization provider is selected via `press.ai.summarization.provider`, and provider models/keys are configured рядом with it.
 - HTTP clients: `http-client.clients.*` (base-url, timeouts, retries) — tuned per source.
 - Commands: build `./mvnw clean verify`, run `./mvnw -pl app spring-boot:run`, tests `./mvnw test`.
 

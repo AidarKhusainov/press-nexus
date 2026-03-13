@@ -10,94 +10,101 @@ import com.nexus.press.app.config.property.GeminiProperties;
 import com.nexus.press.app.config.property.HttpClientName;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriComponentsBuilder;
 
 @Slf4j
-@Primary
 @Component("geminiSummarizationService")
 @RequiredArgsConstructor
-public class GeminiSummarizationService implements SummarizationService {
+public class GeminiSummarizationService implements ProviderSummarizationService {
 
-    private final WebClientConfig webClientConfig;
-    private final GeminiProperties props;
+	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    @Override
-    public Mono<String> summarize(final String text, final String lang) {
-        if (text == null || text.isBlank()) return Mono.just("");
+	private final WebClientConfig webClientConfig;
+	private final GeminiProperties properties;
 
-        final var systemInstr = switch (lang) {
-            case "ru" -> "Ты опытный журналист. Отвечай ТОЛЬКО на русском языке.";
-            case "en" -> "You are an experienced journalist. Respond ONLY in English.";
-            case "es" -> "Eres un periodista experimentado. Responde SOLO en español.";
-            default   -> "You are an experienced journalist. Respond ONLY in English.";
-        };
+	@Override
+	public SummarizationProvider provider() {
+		return SummarizationProvider.GEMINI;
+	}
 
-        final var userTask = switch (lang) {
-            case "ru" -> "Кратко перескажи новость в 3–5 нейтральных предложениях, сохраняя факты и даты.";
-            case "en" -> "Summarize the news in 3–5 neutral sentences, preserving facts and dates.";
-            case "es" -> "Resume la noticia en 3–5 oraciones neutrales, preservando hechos y fechas.";
-            default   -> "Summarize the news in 3–5 neutral sentences, preserving facts and dates.";
-        };
+	@Override
+	public String modelName() {
+		return provider().name() + ":" + properties.model();
+	}
 
-        final var contentText = String.join("\n\n", List.of(systemInstr, userTask, text));
+	@Override
+	public Mono<String> summarize(final String text, final String lang) {
+		if (text == null || text.isBlank()) {
+			return Mono.just("");
+		}
 
-        final Map<String, Object> payload = Map.of(
-            // systemInstruction поддерживается в v1beta
-            "systemInstruction", Map.of(
-                "role", "system",
-                "parts", List.of(Map.of("text", systemInstr))
-            ),
-            "contents", List.of(Map.of(
-                "role", "user",
-                "parts", List.of(Map.of("text", contentText))
-            )),
-            "generationConfig", Map.of(
-                "temperature", 0.2,
-                "topK", 40,
-                "topP", 0.95
-            )
-        );
+		final Map<String, Object> payload = Map.of(
+			"system_instruction", Map.of(
+				"parts", List.of(Map.of("text", SummarizationPromptSupport.systemInstruction(lang)))
+			),
+			"contents", List.of(Map.of(
+				"role", "user",
+				"parts", List.of(Map.of("text", SummarizationPromptSupport.userPrompt(text, lang)))
+			)),
+			"generationConfig", Map.of(
+				"temperature", 0.2,
+				"topP", 0.95,
+				"thinkingConfig", Map.of("thinkingBudget", 0)
+			)
+		);
 
-        final var client = webClientConfig.getWebClient(HttpClientName.GEMINI);
-        final var path = "/models/" + props.model() + ":generateContent";
-        final var uri = UriComponentsBuilder.fromPath(path)
-            .queryParam("key", props.apiKey())
-            .build(true)
-            .toUriString();
+		final long start = System.nanoTime();
 
-        final long start = System.nanoTime();
+		return webClientConfig.getWebClient(HttpClientName.GEMINI)
+			.post()
+			.uri("/models/" + properties.model() + ":generateContent")
+			.headers(headers -> {
+				headers.set("x-goog-api-key", properties.apiKey());
+				headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+				headers.set("x-goog-api-client", "press-nexus/0.1.0");
+			})
+			.contentType(MediaType.APPLICATION_JSON)
+			.bodyValue(payload)
+			.retrieve()
+			.bodyToMono(String.class)
+			.map(GeminiSummarizationService::parseSummary)
+			.doOnSuccess(summary -> {
+				final long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+				log.info("Gemini суммаризация: вход={} симв, выжимка={} симв, {} мс", text.length(), summary.length(), elapsedMs);
+			})
+			.doOnError(ex -> {
+				final long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+				log.warn("Gemini суммаризация завершилась ошибкой после {} мс", elapsedMs, ex);
+			});
+	}
 
-        return client.post()
-            .uri(uri)
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(payload)
-            .retrieve()
-            .bodyToMono(String.class)
-            .map(GeminiSummarizationService::parseSummary)
-            .doOnSuccess(summary -> {
-                final var elapsedMs = (System.nanoTime() - start) / 1_000_000;
-                log.info("Gemini суммаризация: вход={} симв, выжимка={} симв, {} мс", text.length(), summary.length(), elapsedMs);
-            });
-    }
+	static String parseSummary(final String json) {
+		try {
+			final JsonNode parts = OBJECT_MAPPER.readTree(json)
+				.path("candidates")
+				.path(0)
+				.path("content")
+				.path("parts");
+			if (!parts.isArray()) {
+				return "";
+			}
 
-    private static String parseSummary(final String json) {
-        try {
-            final ObjectMapper mapper = new ObjectMapper();
-            final JsonNode root = mapper.readTree(json);
-            final JsonNode cands = root.path("candidates");
-            if (cands.isArray() && cands.size() > 0) {
-                final JsonNode parts = cands.get(0).path("content").path("parts");
-                if (parts.isArray() && parts.size() > 0) {
-                    return parts.get(0).path("text").asText("");
-                }
-            }
-            return "";
-        } catch (Exception e) {
-            return "";
-        }
-    }
+			final StringBuilder summary = new StringBuilder();
+			for (final JsonNode part : parts) {
+				final String text = part.path("text").asText("");
+				if (!text.isBlank()) {
+					if (!summary.isEmpty()) {
+						summary.append(' ');
+					}
+					summary.append(text.trim());
+				}
+			}
+			return summary.toString();
+		} catch (final Exception ex) {
+			log.warn("Gemini ответ не удалось распарсить: {}", json, ex);
+			return "";
+		}
+	}
 }
-

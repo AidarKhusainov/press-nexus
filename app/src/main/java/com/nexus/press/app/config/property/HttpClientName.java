@@ -8,5 +8,8 @@ public enum HttpClientName {
 	OLLAMA,
 	NEWS,
 	GEMINI,
+	GROQ,
+	CLOUDFLARE_WORKERS_AI,
+	MISTRAL,
 	TELEGRAM,
 }
