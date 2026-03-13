@@ -125,6 +125,31 @@ services:
       - egress
       - monitoring
 
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.10.2}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "${CADDY_HTTP_BIND_ADDRESS:-0.0.0.0}:${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_BIND_ADDRESS:-0.0.0.0}:${CADDY_HTTPS_PORT:-443}:443"
+    environment:
+      PRESS_PUBLIC_DOMAIN: ${PRESS_PUBLIC_DOMAIN:-press-nexus.censor-amoroso.com}
+    volumes:
+      - ./docker/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    mem_limit: ${CADDY_MEMORY:-256m}
+    cpus: ${CADDY_CPUS:-0.5}
+    pids_limit: ${CADDY_PIDS_LIMIT:-128}
+    networks:
+      - backend
+      - egress
+
   prometheus:
     image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.10.0}
     restart: unless-stopped
@@ -238,6 +263,8 @@ volumes:
   press-postgres-data:
   press-ollama-data:
   press-app-logs:
+  caddy-data:
+  caddy-config:
   prometheus-data:
   grafana-data:
   loki-data:

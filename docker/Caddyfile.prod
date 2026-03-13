@@ -1,0 +1,17 @@
+{
+	admin off
+}
+
+{$PRESS_PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	@telegramWebhook {
+		path /api/telegram/webhook
+		method POST
+	}
+	handle @telegramWebhook {
+		reverse_proxy app:8080
+	}
+
+	respond "not found" 404
+}

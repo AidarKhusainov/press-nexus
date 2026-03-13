@@ -14,9 +14,9 @@ Use GitHub Actions CD for normal production rollouts.
 - CI also publishes `ghcr.io/<repo>:prod` on `master`
 - CD runs automatically after successful `CI` on `master`
 - CD can also be started manually with `workflow_dispatch`
-- CD uploads `docker/compose.prod.yml` and `monitoring/**` to `/opt/press-nexus`
+- CD uploads `docker/compose.prod.yml`, `docker/Caddyfile.prod`, and `monitoring/**` to `/opt/press-nexus`
 - CD logs into GHCR on the server and runs `docker compose pull/up`
-- CD starts Prometheus, Grafana, Loki, and Promtail together with the app stack
+- CD starts Caddy, Prometheus, Grafana, Loki, and Promtail together with the app stack
 
 ### Required GitHub Secrets
 
@@ -37,6 +37,7 @@ Use GitHub Actions CD for normal production rollouts.
 - `PRESS_DB_USER` - defaults to `pressnexus`
 - `PRESS_DELIVERY_TELEGRAM_ENABLED` - defaults to `false`
 - `PRESS_OTLP_TRACING_ENABLED` - defaults to `false`
+- `PRESS_PUBLIC_DOMAIN` - defaults to `press-nexus.censor-amoroso.com`
 - `APP_BIND_ADDRESS` - defaults to `127.0.0.1`
 - `APP_PORT` - defaults to `8080`
 - `APP_MEMORY` - defaults to `3g`
@@ -52,7 +53,12 @@ Use GitHub Actions CD for normal production rollouts.
 - `OTLP_TRACING_ENDPOINT`
 - `POSTGRES_IMAGE`
 - `OLLAMA_IMAGE`
+- `CADDY_IMAGE`
 - `NODE_EXPORTER_IMAGE`
+- `CADDY_HTTP_BIND_ADDRESS` - defaults to `0.0.0.0`
+- `CADDY_HTTP_PORT` - defaults to `80`
+- `CADDY_HTTPS_BIND_ADDRESS` - defaults to `0.0.0.0`
+- `CADDY_HTTPS_PORT` - defaults to `443`
 - `PROMETHEUS_BIND_ADDRESS` - defaults to `127.0.0.1`
 - `PROMETHEUS_PORT` - defaults to `9090`
 - `GRAFANA_BIND_ADDRESS` - defaults to `127.0.0.1`
@@ -65,25 +71,25 @@ Use GitHub Actions CD for normal production rollouts.
 
 - Docker Engine
 - Docker Compose plugin or `docker-compose`
-- reverse proxy or other HTTPS ingress in front of the app
 - persistent storage for PostgreSQL data and Ollama models
 - outbound internet access from containers for external integrations and the initial Ollama model pull
+- public DNS `A`/`AAAA` record for `PRESS_PUBLIC_DOMAIN` pointing to this host
+- inbound access to ports `80` and `443` so Caddy can obtain and renew TLS certificates
 
 ## Deploy Topology
 
 1. Run PostgreSQL with persistent storage and pgvector enabled.
 2. Run Ollama or provide a compatible embedding backend reachable via `OLLAMA_BASE_URL`.
 3. Run the app image with the `prod` Spring profile.
-4. Put the app behind HTTPS reverse proxy.
+4. Run bundled Caddy reverse proxy for HTTPS ingress on `PRESS_PUBLIC_DOMAIN`.
 5. Expose only:
-   - public brief endpoints if needed
    - Telegram webhook path
-   - health probes
 6. Keep internal/reporting endpoints behind reverse proxy restrictions and `X-PressNexus-Api-Key`.
 7. Keep published ports bound to loopback unless a reverse proxy or ingress explicitly needs wider exposure.
 
-For a single-server rollout, keep `APP_BIND_ADDRESS=127.0.0.1` when a reverse proxy is installed.
+For a single-server rollout, keep `APP_BIND_ADDRESS=127.0.0.1` because Caddy terminates HTTPS and proxies to the app over the internal Docker network.
 Keep PostgreSQL on the internal backend network only. The app, Ollama, and `ollama-model-init` must also join an egress-capable network; otherwise `ollama-model-init` cannot fetch `nomic-embed-text`, and the `app` service will stay in `Created` because it depends on that init job succeeding.
+The bundled Caddy ingress only publishes `/api/telegram/webhook`; health, brief, and internal/reporting endpoints remain on loopback and should be reached over SSH.
 Monitoring ports should also stay on loopback and be accessed through SSH tunnel.
 The production app container now defaults to `3g` and the JVM exits on `OutOfMemoryError`, so Docker can restart the service instead of leaving it running but unhealthy.
 The production Ollama container now defaults to `6` vCPU / `8g` RAM with `OLLAMA_NUM_PARALLEL=4`, and the app drives embedding with batched requests plus `PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY=4`.
@@ -93,8 +99,8 @@ The production Ollama container now defaults to `6` vCPU / `8g` RAM with `OLLAMA
 If GitHub Actions is unavailable, export the required runtime variables in the shell and run:
 
 ```bash
-docker compose -f docker/compose.prod.yml pull app
-docker compose -f docker/compose.prod.yml up -d app prometheus node-exporter grafana loki promtail
+docker compose -f docker/compose.prod.yml pull app caddy
+docker compose -f docker/compose.prod.yml up -d app caddy prometheus node-exporter grafana loki promtail
 ```
 
 ## Rollback
@@ -114,33 +120,58 @@ docker compose -f docker/compose.prod.yml up -d app prometheus node-exporter gra
 
 ## Telegram Webhook
 
-After the app is reachable via HTTPS, register Telegram webhook with the same secret token used by the app.
+After the app is reachable via HTTPS on `https://$PRESS_PUBLIC_DOMAIN`, register Telegram webhook with the same secret token used by the app.
 
 Expected app-side header:
 
 - `X-Telegram-Bot-Api-Secret-Token: $TELEGRAM_WEBHOOK_SECRET_TOKEN`
 
+Helper command:
+
+```bash
+PRESS_PUBLIC_DOMAIN=${PRESS_PUBLIC_DOMAIN:-press-nexus.censor-amoroso.com} \
+TELEGRAM_BOT_TOKEN=... \
+TELEGRAM_WEBHOOK_SECRET_TOKEN=... \
+./scripts/register-telegram-webhook.sh
+```
+
+The helper registers `https://$PRESS_PUBLIC_DOMAIN/api/telegram/webhook` and verifies the resulting webhook info.
+
 ## Smoke Checks
 
 ```bash
-curl -sS https://<host>/actuator/health
+ssh <user>@<host> \
+  "curl -sS http://127.0.0.1:8080/actuator/health"
 ```
 
 ```bash
-curl -sS "https://<host>/api/brief/daily/text?hours=24&limit=3&lang=ru"
+ssh <user>@<host> \
+  "curl -sS 'http://127.0.0.1:8080/api/brief/daily/text?hours=24&limit=3&lang=ru'"
 ```
 
 ```bash
-curl -sS \
-  -H "X-PressNexus-Api-Key: $PRESS_API_KEY" \
-  "https://<host>/api/analytics/product-report/daily?date=YYYY-MM-DD"
+curl -sS -X POST \
+  -H "X-Telegram-Bot-Api-Secret-Token: $TELEGRAM_WEBHOOK_SECRET_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"update_id":1}' \
+  "https://${PRESS_PUBLIC_DOMAIN}/api/telegram/webhook"
 ```
 
 ```bash
-curl -sS \
-  -X POST \
-  -H "X-PressNexus-Api-Key: $PRESS_API_KEY" \
-  "https://<host>/api/brief/daily/send"
+ssh <user>@<host> \
+  "curl -sS -H 'X-PressNexus-Api-Key: $PRESS_API_KEY' \
+  'http://127.0.0.1:8080/api/analytics/product-report/daily?date=YYYY-MM-DD'"
+```
+
+```bash
+ssh <user>@<host> \
+  "curl -sS -X POST -H 'X-PressNexus-Api-Key: $PRESS_API_KEY' \
+  'http://127.0.0.1:8080/api/brief/daily/send'"
+```
+
+```bash
+ssh <user>@<host> \
+  "curl -sS http://127.0.0.1:8080/actuator/health/readiness"
 ```
 
 ## Monitoring Access
@@ -171,5 +202,6 @@ Grafana dashboards are provisioned automatically:
 ## Notes
 
 - Secrets live in GitHub Actions and are passed only for the deploy command.
-- The workflow deploys the app stack itself; ingress and Telegram webhook management stay outside this workflow.
+- The workflow now deploys the bundled Caddy ingress together with the app stack.
+- Telegram webhook registration is still an explicit post-deploy step, because it depends on live DNS/TLS readiness.
 - The current CD flow intentionally skips SSH host verification and post-deploy smoke checks.
