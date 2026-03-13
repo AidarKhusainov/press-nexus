@@ -2,10 +2,13 @@
   "id": null,
   "uid": "press-nexus-overview",
   "title": "Press Nexus Overview",
-  "tags": ["press-nexus", "observability"],
+  "tags": [
+    "press-nexus",
+    "observability"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "refresh": "15s",
   "time": {
     "from": "now-6h",
@@ -21,7 +24,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "query": "label_values(press_queue_depth, application)",
+        "query": "label_values(application_ready_time_seconds, application)",
         "refresh": 2,
         "multi": false,
         "includeAll": false,
@@ -36,32 +39,42 @@
   "panels": [
     {
       "type": "timeseries",
-      "title": "Queue Depth",
+      "title": "Pipeline Backlog",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
-          "expr": "sum by (queue) (press_queue_depth{application=\"$application\"})",
-          "legendFormat": "{{queue}}",
+          "expr": "sum by (stage, state) (press_pipeline_backlog{application=\"$application\"})",
+          "legendFormat": "{{stage}} {{state}}",
           "refId": "A"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Queue Events Rate (5m)",
+      "title": "Job Skips (1h)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
         {
-          "expr": "sum by (queue, event) (rate(press_queue_events_total{application=\"$application\"}[5m]))",
-          "legendFormat": "{{queue}} {{event}}",
+          "expr": "sum by (exported_job, reason) (increase(press_jobs_skipped_total{application=\"$application\"}[1h]))",
+          "legendFormat": "{{exported_job}} {{reason}}",
           "refId": "A"
         }
       ]
@@ -73,7 +86,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
         {
           "expr": "sum by (stage, outcome) (rate(press_pipeline_stage_events_total{application=\"$application\"}[5m]))",
@@ -89,7 +107,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(press_pipeline_stage_duration_seconds_bucket{application=\"$application\", outcome=\"success\"}[5m])))",
@@ -105,7 +128,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "targets": [
         {
           "expr": "sum by (client, outcome) (rate(press_http_client_requests_total{application=\"$application\"}[5m]))",
@@ -121,7 +149,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum by (le, client) (rate(press_http_client_duration_seconds_bucket{application=\"$application\"}[5m])))",
@@ -137,43 +170,58 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
       "targets": [
         {
-          "expr": "sum by (job, outcome) (increase(press_jobs_runs_total{application=\"$application\"}[1h]))",
-          "legendFormat": "{{job}} {{outcome}}",
+          "expr": "sum by (exported_job, outcome) (increase(press_jobs_runs_total{application=\"$application\"}[1h]))",
+          "legendFormat": "{{exported_job}} {{outcome}}",
           "refId": "A"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Delivery Messages (1h)",
+      "title": "Backlog Average (1h)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
       "targets": [
         {
-          "expr": "sum by (channel, outcome) (increase(press_delivery_messages_total{application=\"$application\"}[1h]))",
-          "legendFormat": "{{channel}} {{outcome}}",
+          "expr": "sum by (stage, state) (avg_over_time(press_pipeline_backlog{application=\"$application\"}[1h]))",
+          "legendFormat": "{{stage}} {{state}}",
           "refId": "A"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Delivery Batch Size Sum (1h)",
+      "title": "Backlog Peak (1h)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
       "targets": [
         {
-          "expr": "sum by (channel) (increase(press_delivery_batch_sent_sum{application=\"$application\"}[1h]))",
-          "legendFormat": "{{channel}}",
+          "expr": "sum by (stage, state) (max_over_time(press_pipeline_backlog{application=\"$application\"}[1h]))",
+          "legendFormat": "{{stage}} {{state}}",
           "refId": "A"
         }
       ]
