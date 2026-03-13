@@ -3,7 +3,9 @@ package com.nexus.press.app.service.scheduler;
 import jakarta.annotation.PreDestroy;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.service.news.NewsPipelineWorkerService;
 import lombok.RequiredArgsConstructor;
@@ -24,17 +26,26 @@ public class ScheduledNewsPipelineTask {
 	@EventListener(ApplicationReadyEvent.class)
 	public void start() {
 		final Duration interval = newsPipelineProperties.getWorkerInterval();
-		subscription = Flux.interval(Duration.ZERO, interval)
-			.concatMap(tick -> newsPipelineWorkerService.drainOnce()
-				.onErrorResume(error -> {
-					log.warn("Ошибка в worker news pipeline на тике {}", tick, error);
-					return reactor.core.publisher.Mono.empty();
-				}))
+		subscription = scheduledDrainLoop(interval)
 			.doOnSubscribe(s -> log.info("Запущен worker news pipeline"))
 			.subscribe(
 				null,
 				error -> log.error("Worker news pipeline остановлен из-за необработанной ошибки", error)
 			);
+	}
+
+	Flux<NewsPipelineWorkerService.DrainResult> scheduledDrainLoop(final Duration interval) {
+		final AtomicLong tickCounter = new AtomicLong();
+		return Mono.defer(() -> runDrainTick(tickCounter.getAndIncrement()))
+			.repeatWhen(repeatSignals -> repeatSignals.delayElements(interval));
+	}
+
+	private Mono<NewsPipelineWorkerService.DrainResult> runDrainTick(final long tick) {
+		return newsPipelineWorkerService.drainOnce()
+			.onErrorResume(error -> {
+				log.warn("Ошибка в worker news pipeline на тике {}", tick, error);
+				return Mono.empty();
+			});
 	}
 
 	@PreDestroy
