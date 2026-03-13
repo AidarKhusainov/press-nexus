@@ -29,6 +29,8 @@ This starts:
 - one-shot model bootstrap for `nomic-embed-text`
 - application (`app`) on `http://localhost:8080`
 
+The local CPU Ollama profile now defaults to `6` vCPU / `8g` RAM with `OLLAMA_NUM_PARALLEL=4`, and the app defaults to `PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY=4`.
+
 Published ports are bound to `127.0.0.1` by default. Override `APP_BIND_ADDRESS`, `POSTGRES_BIND_ADDRESS`, `OLLAMA_BIND_ADDRESS`, or the corresponding `*_PORT` variables only when you intentionally need remote access from outside the host.
 
 PostgreSQL extensions are initialized via `docker/postgres/initdb.d`, so no follow-up `docker exec` step is required.

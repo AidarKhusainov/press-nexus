@@ -14,11 +14,13 @@ import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.ProcessedNews;
 import com.nexus.press.app.service.news.model.RawNews;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,7 +43,11 @@ class NewsPipelineWorkerServiceTest {
 		final var similarityProperties = new SimilarityProperties();
 
 		when(populateService.populate(any(RawNews.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
-		when(embeddingService.embed(any(RawNews.class))).thenAnswer(invocation -> Mono.just(processed(invocation.getArgument(0))));
+		when(embeddingService.embedBatch(any())).thenAnswer(invocation -> {
+			@SuppressWarnings("unchecked")
+			final List<RawNews> batch = invocation.getArgument(0);
+			return Mono.just(batch.stream().map(NewsPipelineWorkerServiceTest::processed).toList());
+		});
 		when(clusteringService.clusterOf(eq("repr-1"), eq(similarityProperties.getClusterMinScore())))
 			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-1", "dup-1"), "repr-1")));
 		when(clusteringService.clusterOf(eq("dup-1"), eq(similarityProperties.getClusterMinScore())))
@@ -67,8 +73,48 @@ class NewsPipelineWorkerServiceTest {
 		assertEquals(2L, result.summaryClaimed());
 		assertEquals(List.of("dup-1:DONE"), persistence.summaryStatusUpdates);
 		verify(populateService).populate(any(RawNews.class));
-		verify(embeddingService).embed(any(RawNews.class));
+		verify(embeddingService).embedBatch(any());
 		verify(summarizationService).summarize(any(ProcessedNews.class));
+	}
+
+	@Test
+	void drainOnceClaimsEmbeddingWorkInParallelBatches() {
+		final var persistence = new StubPersistenceService(
+			List.of(),
+			List.of(raw("embedding-1"), raw("embedding-2"), raw("embedding-3"), raw("embedding-4"), raw("embedding-5")),
+			List.of()
+		);
+		final var populateService = mock(NewsPopulateContentService.class);
+		final var embeddingService = mock(NewsEmbeddingService.class);
+		final var summarizationService = mock(NewsSummarizationService.class);
+		final var clusteringService = mock(NewsClusteringService.class);
+		final var properties = pipelineProperties();
+		properties.setEmbeddingBatchSize(2);
+		properties.setEmbeddingConcurrency(2);
+
+		when(embeddingService.embedBatch(any())).thenAnswer(invocation -> {
+			@SuppressWarnings("unchecked")
+			final List<RawNews> batch = invocation.getArgument(0);
+			return Mono.just(batch.stream().map(NewsPipelineWorkerServiceTest::processed).toList());
+		});
+
+		final var worker = new NewsPipelineWorkerService(
+			persistence,
+			populateService,
+			embeddingService,
+			summarizationService,
+			clusteringService,
+			properties,
+			new SimilarityProperties(),
+			APP_METRICS
+		);
+
+		final var result = worker.drainOnce().block();
+		final ArgumentCaptor<List<RawNews>> captor = ArgumentCaptor.forClass(List.class);
+
+		assertEquals(4L, result.embeddingClaimed());
+		verify(embeddingService, times(2)).embedBatch(captor.capture());
+		assertEquals(List.of(2, 2), captor.getAllValues().stream().map(List::size).toList());
 	}
 
 	private static NewsPipelineProperties pipelineProperties() {

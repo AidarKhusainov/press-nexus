@@ -38,7 +38,8 @@ services:
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
       OLLAMA_NO_GPU: ${OLLAMA_NO_GPU:-1}
-      OMP_NUM_THREADS: ${OLLAMA_THREADS:-4}
+      OMP_NUM_THREADS: ${OLLAMA_THREADS:-6}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
     expose:
       - "11434"
     volumes:
@@ -52,8 +53,8 @@ services:
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
-    mem_limit: ${OLLAMA_MEMORY:-6g}
-    cpus: ${OLLAMA_CPUS:-2.0}
+    mem_limit: ${OLLAMA_MEMORY:-8g}
+    cpus: ${OLLAMA_CPUS:-6.0}
     pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
     networks:
       - backend
@@ -102,6 +103,7 @@ services:
       TELEGRAM_WEBHOOK_SECRET_TOKEN: ${TELEGRAM_WEBHOOK_SECRET_TOKEN:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY}
+      PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY: ${PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY:-4}
       PRESS_OTLP_TRACING_ENABLED: ${PRESS_OTLP_TRACING_ENABLED:-false}
       OTLP_TRACING_ENDPOINT: ${OTLP_TRACING_ENDPOINT:-http://otel-collector:4318/v1/traces}
     volumes:

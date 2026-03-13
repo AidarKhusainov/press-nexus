@@ -15,7 +15,8 @@ services:
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
       OLLAMA_NO_GPU: "1"
-      OMP_NUM_THREADS: ${OLLAMA_THREADS:-8}
+      OMP_NUM_THREADS: ${OLLAMA_THREADS:-6}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
@@ -25,8 +26,8 @@ services:
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
-    mem_limit: ${OLLAMA_MEMORY:-6g}
-    cpus: ${OLLAMA_CPUS:-2.0}
+    mem_limit: ${OLLAMA_MEMORY:-8g}
+    cpus: ${OLLAMA_CPUS:-6.0}
     pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
     restart: unless-stopped
     networks:
@@ -42,7 +43,8 @@ services:
       - ollama:/root/.ollama
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
-      OMP_NUM_THREADS: ${OLLAMA_THREADS:-8}
+      OMP_NUM_THREADS: ${OLLAMA_THREADS:-6}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
@@ -52,8 +54,8 @@ services:
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
-    mem_limit: ${OLLAMA_MEMORY:-6g}
-    cpus: ${OLLAMA_CPUS:-2.0}
+    mem_limit: ${OLLAMA_MEMORY:-8g}
+    cpus: ${OLLAMA_CPUS:-6.0}
     pids_limit: ${OLLAMA_PIDS_LIMIT:-512}
     deploy:
       resources:
@@ -132,6 +134,7 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama-cpu:11434/}
       PRESS_DELIVERY_TELEGRAM_ENABLED: ${PRESS_DELIVERY_TELEGRAM_ENABLED:-false}
       PRESS_API_KEY: ${PRESS_API_KEY:-}
+      PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY: ${PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY:-4}
       PRESS_OTLP_TRACING_ENABLED: ${PRESS_OTLP_TRACING_ENABLED:-false}
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"

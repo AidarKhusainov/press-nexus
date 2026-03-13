@@ -70,12 +70,14 @@ public class NewsPipelineWorkerService {
 	}
 
 	private Mono<Long> processEmbeddingBatch() {
+		final int batchSize = Math.max(1, newsPipelineProperties.getEmbeddingBatchSize());
+		final int concurrency = Math.max(1, newsPipelineProperties.getEmbeddingConcurrency());
 		return newsPersistenceService.claimNewsPendingEmbedding(
-				newsPipelineProperties.getEmbeddingBatchSize(),
+				batchSize * concurrency,
 				newsPipelineProperties.getClaimTimeout()
 			)
 			.collectList()
-			.flatMap(batch -> processClaimedEmbeddingBatch(batch).thenReturn((long) batch.size()));
+			.flatMap(batch -> processClaimedEmbeddingBatch(batch, batchSize, concurrency).thenReturn((long) batch.size()));
 	}
 
 	private Mono<Long> processSummaryBatch() {
@@ -97,13 +99,13 @@ public class NewsPipelineWorkerService {
 			.then();
 	}
 
-	private Mono<Void> processClaimedEmbeddingBatch(final List<RawNews> batch) {
+	private Mono<Void> processClaimedEmbeddingBatch(final List<RawNews> batch, final int batchSize, final int concurrency) {
 		if (batch.isEmpty()) {
 			return Mono.empty();
 		}
 
-		return Flux.fromIterable(batch)
-			.flatMap(newsEmbeddingService::embed, Math.max(1, newsPipelineProperties.getEmbeddingConcurrency()), 1)
+		return Flux.fromIterable(partition(batch, batchSize))
+			.flatMap(newsEmbeddingService::embedBatch, concurrency, 1)
 			.then();
 	}
 
@@ -134,6 +136,14 @@ public class NewsPipelineWorkerService {
 				return newsPersistenceService.updateStatusSummary(news.getId(), ProcessingStatus.FAILED)
 					.then(Mono.empty());
 			});
+	}
+
+	private static <T> List<List<T>> partition(final List<T> items, final int batchSize) {
+		final List<List<T>> batches = new java.util.ArrayList<>();
+		for (int i = 0; i < items.size(); i += batchSize) {
+			batches.add(items.subList(i, Math.min(items.size(), i + batchSize)));
+		}
+		return batches;
 	}
 
 	private ProcessedNews toProcessedNews(final RawNews news) {

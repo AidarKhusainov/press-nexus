@@ -36,6 +36,25 @@ class NewsEmbeddingServiceTest {
 		assertNull(result.getContentSummary());
 	}
 
+	@Test
+	void embedBatchPersistsEachVectorAndMarksItemsDone() {
+		final var embeddingService = new StubEmbeddingService(List.of(
+			new float[] { 1f, 0f, 0f },
+			new float[] { 0f, 1f, 0f }
+		));
+		final var similarityStore = new RecordingSimilarityStore();
+		final var persistence = new RecordingPersistenceService();
+		final var service = new NewsEmbeddingService(embeddingService, similarityStore, persistence, APP_METRICS);
+
+		final var result = service.embedBatch(List.of(sampleRawNews("id-1"), sampleRawNews("id-2"))).block();
+
+		assertNotNull(result);
+		assertEquals(2, result.size());
+		assertEquals(List.of(ProcessingStatus.DONE, ProcessingStatus.DONE), persistence.statusHistory);
+		assertEquals(List.of("id-1", "id-2"), similarityStore.ids);
+		assertEquals(2, similarityStore.embeddings.size());
+	}
+
 	private static RawNews sampleRawNews(final String id) {
 		return RawNews.builder()
 			.id(id)
@@ -52,14 +71,26 @@ class NewsEmbeddingServiceTest {
 	private static final class StubEmbeddingService implements EmbeddingService {
 
 		private final float[] embedding;
+		private final List<float[]> embeddings;
 
 		private StubEmbeddingService(final float[] embedding) {
 			this.embedding = embedding;
+			this.embeddings = List.of();
+		}
+
+		private StubEmbeddingService(final List<float[]> embeddings) {
+			this.embedding = new float[0];
+			this.embeddings = embeddings;
 		}
 
 		@Override
 		public Mono<float[]> embed(final String text) {
 			return Mono.just(embedding);
+		}
+
+		@Override
+		public Mono<List<float[]>> embedBatch(final List<String> texts) {
+			return Mono.just(embeddings);
 		}
 	}
 
@@ -67,6 +98,8 @@ class NewsEmbeddingServiceTest {
 
 		private String lastId;
 		private float[] lastEmbedding;
+		private final List<String> ids = new ArrayList<>();
+		private final List<float[]> embeddings = new ArrayList<>();
 
 		@Override
 		public Mono<Void> put(final String idA, final String idB, final double similarity) {
@@ -82,6 +115,8 @@ class NewsEmbeddingServiceTest {
 		public Mono<Void> upsertEmbedding(final String id, final float[] embedding) {
 			lastId = id;
 			lastEmbedding = embedding;
+			ids.add(id);
+			embeddings.add(embedding);
 			return Mono.empty();
 		}
 

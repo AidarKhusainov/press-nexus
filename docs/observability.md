@@ -36,5 +36,6 @@ Any new critical flow must include at least one metric and one actionable log ev
   - `press.pipeline.stage.duration{stage,outcome}`
   - `press.jobs.runs{job,outcome}`
   - `press.jobs.skipped{job,reason}` for discovery throttling on high backlog
+- Embedding throughput tuning must be validated against `press.pipeline.backlog{stage="embedding",state=~"pending|in_progress"}`, `press.pipeline.stage.duration{stage="embedding"}`, and `press_http_client_duration_seconds{client="OLLAMA"}`.
 - Backlog dashboards and alerts should distinguish `pending`/`in_progress` from `failed`; only active backlog should drive discovery throttling.
 - Readiness must reflect app/runtime dependencies; backlog is an alert/SLO signal, not a readiness gate.

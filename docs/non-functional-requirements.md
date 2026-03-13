@@ -13,6 +13,7 @@
   - connection timeout <= 60s
   - read timeout <= 300s
 - DB backlog target: pending backlog should stay bounded and observable; alerting is based on backlog size/age, not readiness state.
+- Embedding throughput should use batched backend requests and bounded stage concurrency so backlog can be reduced without unbounded in-memory fan-out.
 
 ## Reliability
 
