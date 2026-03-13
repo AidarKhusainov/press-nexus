@@ -48,6 +48,7 @@ Use GitHub Actions CD for normal production rollouts.
 - `OTLP_TRACING_ENDPOINT`
 - `POSTGRES_IMAGE`
 - `OLLAMA_IMAGE`
+- `NODE_EXPORTER_IMAGE`
 - `PROMETHEUS_BIND_ADDRESS` - defaults to `127.0.0.1`
 - `PROMETHEUS_PORT` - defaults to `9090`
 - `GRAFANA_BIND_ADDRESS` - defaults to `127.0.0.1`
@@ -88,7 +89,7 @@ If GitHub Actions is unavailable, export the required runtime variables in the s
 
 ```bash
 docker compose -f docker/compose.prod.yml pull app
-docker compose -f docker/compose.prod.yml up -d app prometheus grafana loki promtail
+docker compose -f docker/compose.prod.yml up -d app prometheus node-exporter grafana loki promtail
 ```
 
 ## Rollback
@@ -160,6 +161,7 @@ Grafana dashboards are provisioned automatically:
 - `Press Nexus Overview`
 - `Press Nexus Logs`
 - `Press Nexus Product Analytics`
+- `Press Nexus Server Overview`
 
 ## Notes
 

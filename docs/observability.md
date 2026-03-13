@@ -16,6 +16,12 @@
 - `Press Nexus Overview`
 - `Press Nexus Logs`
 - `Press Nexus Product Analytics`
+- `Press Nexus Server Overview`
+
+## Infrastructure Metrics
+
+- Host metrics are scraped from `node_exporter` under Prometheus job `press-nexus-node`.
+- Required host-level signals: CPU usage, load average, memory usage, filesystem utilization, disk IO, and network throughput.
 
 ## Operational Rule
 

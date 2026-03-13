@@ -178,6 +178,37 @@ services:
     networks:
       - monitoring
 
+  node-exporter:
+    image: ${NODE_EXPORTER_IMAGE:-quay.io/prometheus/node-exporter:v1.8.2}
+    container_name: pressnexus_node_exporter
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+    volumes:
+      - type: bind
+        source: /proc
+        target: /host/proc
+        read_only: true
+      - type: bind
+        source: /sys
+        target: /host/sys
+        read_only: true
+      - type: bind
+        source: /
+        target: /host/root
+        read_only: true
+        bind:
+          propagation: rslave
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    networks:
+      - monitoring
+
   grafana:
     image: ${GRAFANA_IMAGE:-grafana/grafana:12.4}
     container_name: pressnexus_grafana
@@ -193,6 +224,7 @@ services:
       - ../monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
     depends_on:
       - prometheus
+      - node-exporter
     security_opt:
       - no-new-privileges:true
     logging: *default-logging

@@ -60,7 +60,7 @@ docker compose -f docker/compose.yml up -d app
 ## Optional monitoring stack
 
 ```bash
-docker compose -f docker/compose.yml --profile monitoring up -d prometheus grafana loki promtail
+docker compose -f docker/compose.yml --profile monitoring up -d prometheus node-exporter grafana loki promtail
 ```
 
 If you want the GPU-backed Ollama service instead of the default CPU profile, start it explicitly:

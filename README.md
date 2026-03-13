@@ -73,7 +73,7 @@ The first `docker compose -f docker/compose.yml up -d app` can take longer becau
 - Generate HTTP controllers from OpenAPI: `./mvnw -B -ntp -pl app generate-sources`
 - Start monitoring stack:
 ```bash
-docker compose -f docker/compose.yml --profile monitoring up -d prometheus grafana loki promtail
+docker compose -f docker/compose.yml --profile monitoring up -d prometheus node-exporter grafana loki promtail
 ```
 
 ## Quality Gates (Mandatory)
