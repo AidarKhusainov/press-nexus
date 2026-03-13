@@ -117,4 +117,5 @@ jobs:
             echo "${{ secrets.PROD_GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.PROD_GHCR_USERNAME }}" --password-stdin
             docker compose -f compose.prod.yml pull app
             docker compose -f compose.prod.yml up -d app prometheus node-exporter grafana loki promtail
+            docker compose -f compose.prod.yml restart prometheus grafana loki promtail
             docker compose -f compose.prod.yml ps app prometheus node-exporter grafana loki promtail
