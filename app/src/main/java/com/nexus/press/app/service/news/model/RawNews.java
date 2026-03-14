@@ -27,5 +27,7 @@ public class RawNews {
 	private final String cleanContent;
 	private final Media source;
 	private final OffsetDateTime publishedDate;
+	private final OffsetDateTime fetchedDate;
+	private final String contentHash;
 	private final String language;
 }

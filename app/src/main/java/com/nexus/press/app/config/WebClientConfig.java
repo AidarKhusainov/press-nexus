@@ -40,6 +40,7 @@ public class WebClientConfig {
 	private static final String REQUEST_ID_CONTEXT_KEY = "requestId";
 
 	private final Map<HttpClientName, HttpClientProperties.ClientConfig> clientProperties;
+	private final Map<HttpClientName, Boolean> retryOnTooManyRequestsByClient;
 	private final AppMetrics appMetrics;
 	private final Map<HttpClientName, WebClient> clientCache = new ConcurrentHashMap<>();
 
@@ -64,19 +65,30 @@ public class WebClientConfig {
 				mistralProperties,
 				telegramProperties
 			),
+			buildRetryPolicyProperties(geminiProperties),
 			appMetrics
 		);
 	}
 
 	public WebClientConfig(final HttpClientProperties properties, final AppMetrics appMetrics) {
-		this(properties.clients(), appMetrics);
+		this(properties.clients(), defaultRetryPolicyProperties(properties.clients()), appMetrics);
+	}
+
+	WebClientConfig(
+		final HttpClientProperties properties,
+		final Map<HttpClientName, Boolean> retryOnTooManyRequestsByClient,
+		final AppMetrics appMetrics
+	) {
+		this(properties.clients(), retryOnTooManyRequestsByClient, appMetrics);
 	}
 
 	private WebClientConfig(
 		final Map<HttpClientName, HttpClientProperties.ClientConfig> clientProperties,
+		final Map<HttpClientName, Boolean> retryOnTooManyRequestsByClient,
 		final AppMetrics appMetrics
 	) {
 		this.clientProperties = Map.copyOf(clientProperties);
+		this.retryOnTooManyRequestsByClient = Map.copyOf(retryOnTooManyRequestsByClient);
 		this.appMetrics = appMetrics;
 	}
 
@@ -153,8 +165,10 @@ public class WebClientConfig {
 	/**
 	 * Создает фильтр для повторных попыток с логированием.
 	 */
-	private ExchangeFilterFunction createRetryFilter(final HttpClientName clientName,
-													 final HttpClientProperties.Retry retryConfig) {
+	private ExchangeFilterFunction createRetryFilter(
+		final HttpClientName clientName,
+		final HttpClientProperties.Retry retryConfig
+	) {
 		return (request, next) -> {
 			final var requestId = getRequestId(request.attributes());
 
@@ -162,7 +176,7 @@ public class WebClientConfig {
 				.retryWhen(
 					Retry.backoff(retryConfig.maxAttempts(), retryConfig.backoff())
 						.jitter(retryConfig.jitter())
-						.filter(this::isRetryableError)
+						.filter(throwable -> isRetryableError(clientName, throwable))
 						.doBeforeRetry(retrySignal -> {
 							appMetrics.httpClientRetry(clientName.name());
 							log.warn("К платформе {} будет выполнена повторная попытка ({} из {}) запроса {}",
@@ -181,9 +195,12 @@ public class WebClientConfig {
 		return (String) attributes.getOrDefault(REQUEST_ID_CONTEXT_KEY, "n/a");
 	}
 
-	private boolean isRetryableError(final Throwable throwable) {
+	boolean isRetryableError(final HttpClientName clientName, final Throwable throwable) {
 		if (throwable instanceof final WebClientResponseException e) {
-			return e.getStatusCode().value() == 429 || e.getStatusCode().is5xxServerError();
+			if (e.getStatusCode().value() == 429) {
+				return retryOnTooManyRequestsByClient.getOrDefault(clientName, true);
+			}
+			return e.getStatusCode().is5xxServerError();
 		}
 		return throwable instanceof IOException
 			|| throwable instanceof TimeoutException
@@ -213,5 +230,24 @@ public class WebClientConfig {
 		properties.put(HttpClientName.MISTRAL, mistralProperties.http());
 		properties.put(HttpClientName.TELEGRAM, telegramProperties.http());
 		return properties;
+	}
+
+	private static Map<HttpClientName, Boolean> buildRetryPolicyProperties(final GeminiProperties geminiProperties) {
+		final Map<HttpClientName, Boolean> policies = new EnumMap<>(HttpClientName.class);
+		for (final HttpClientName clientName : HttpClientName.values()) {
+			policies.put(clientName, true);
+		}
+		policies.put(HttpClientName.GEMINI, geminiProperties.retryOnTooManyRequests());
+		return policies;
+	}
+
+	private static Map<HttpClientName, Boolean> defaultRetryPolicyProperties(
+		final Map<HttpClientName, HttpClientProperties.ClientConfig> clientProperties
+	) {
+		final Map<HttpClientName, Boolean> policies = new EnumMap<>(HttpClientName.class);
+		for (final HttpClientName clientName : clientProperties.keySet()) {
+			policies.put(clientName, true);
+		}
+		return policies;
 	}
 }

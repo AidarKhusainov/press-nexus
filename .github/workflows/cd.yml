@@ -95,7 +95,7 @@ jobs:
           TELEGRAM_WEBHOOK_SECRET_TOKEN: ${{ secrets.TELEGRAM_WEBHOOK_SECRET_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PRESS_DELIVERY_TELEGRAM_ENABLED: ${{ vars.PRESS_DELIVERY_TELEGRAM_ENABLED || 'false' }}
+          PRESS_DELIVERY_TELEGRAM_ENABLED: ${{ vars.PRESS_DELIVERY_TELEGRAM_ENABLED || 'true' }}
           PRESS_OTLP_TRACING_ENABLED: ${{ vars.PRESS_OTLP_TRACING_ENABLED || 'false' }}
           PRESS_PUBLIC_DOMAIN: ${{ vars.PRESS_PUBLIC_DOMAIN || 'press-nexus.censor-amoroso.com' }}
           APP_BIND_ADDRESS: ${{ vars.APP_BIND_ADDRESS || '127.0.0.1' }}

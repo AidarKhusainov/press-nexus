@@ -7,26 +7,43 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.config.property.SimilarityProperties;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.ProcessedNews;
 import com.nexus.press.app.service.news.model.RawNews;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.Disposable;
+import reactor.core.publisher.MonoSink;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class NewsPipelineWorkerServiceTest {
 
 	private static final AppMetrics APP_METRICS = new AppMetrics(new SimpleMeterRegistry());
+	private final List<Disposable> subscriptions = new ArrayList<>();
+
+	@AfterEach
+	void tearDown() {
+		subscriptions.forEach(Disposable::dispose);
+		subscriptions.clear();
+	}
 
 	@Test
 	void drainOnceProcessesClaimedStagesAndMarksDuplicateSummaryDone() {
@@ -52,7 +69,9 @@ class NewsPipelineWorkerServiceTest {
 			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-1", "dup-1"), "repr-1")));
 		when(clusteringService.clusterOf(eq("dup-1"), eq(similarityProperties.getClusterMinScore())))
 			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-1", "dup-1"), "repr-1")));
-		when(summarizationService.summarize(any(ProcessedNews.class)))
+		when(summarizationService.summarize(any(ProcessedNews.class), any(NewsClusteringService.Cluster.class), any()))
+			.thenAnswer(invocation -> Mono.just(((ProcessedNews) invocation.getArgument(0)).withContentSummary("summary")));
+		when(summarizationService.inheritSummary(any(ProcessedNews.class), eq("repr-1")))
 			.thenAnswer(invocation -> Mono.just(((ProcessedNews) invocation.getArgument(0)).withContentSummary("summary")));
 
 		final var worker = new NewsPipelineWorkerService(
@@ -71,10 +90,11 @@ class NewsPipelineWorkerServiceTest {
 		assertEquals(1L, result.contentClaimed());
 		assertEquals(1L, result.embeddingClaimed());
 		assertEquals(2L, result.summaryClaimed());
-		assertEquals(List.of("dup-1:DONE"), persistence.summaryStatusUpdates);
 		verify(populateService).populate(any(RawNews.class));
 		verify(embeddingService).embedBatch(any());
-		verify(summarizationService).summarize(any(ProcessedNews.class));
+		verify(summarizationService).summarize(any(ProcessedNews.class), any(NewsClusteringService.Cluster.class), any());
+		verify(summarizationService).inheritSummary(any(ProcessedNews.class), eq("repr-1"));
+		verifyNoMoreInteractions(summarizationService);
 	}
 
 	@Test
@@ -115,6 +135,65 @@ class NewsPipelineWorkerServiceTest {
 		assertEquals(4L, result.embeddingClaimed());
 		verify(embeddingService, times(2)).embedBatch(captor.capture());
 		assertEquals(List.of(2, 2), captor.getAllValues().stream().map(List::size).toList());
+	}
+
+	@Test
+	void drainOncePreservesConfiguredSummaryConcurrencyForRepresentatives() throws Exception {
+		final var persistence = new StubPersistenceService(
+			List.of(),
+			List.of(),
+			List.of(raw("repr-1"), raw("repr-2"))
+		);
+		final var populateService = mock(NewsPopulateContentService.class);
+		final var embeddingService = mock(NewsEmbeddingService.class);
+		final var summarizationService = mock(NewsSummarizationService.class);
+		final var clusteringService = mock(NewsClusteringService.class);
+		final var properties = pipelineProperties();
+		properties.setSummaryConcurrency(2);
+		final var similarityProperties = new SimilarityProperties();
+
+		when(clusteringService.clusterOf(eq("repr-1"), eq(similarityProperties.getClusterMinScore())))
+			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-1"), "repr-1")));
+		when(clusteringService.clusterOf(eq("repr-2"), eq(similarityProperties.getClusterMinScore())))
+			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-2"), "repr-2")));
+
+		final CountDownLatch started = new CountDownLatch(2);
+		final CountDownLatch finished = new CountDownLatch(1);
+		final AtomicInteger active = new AtomicInteger();
+		final AtomicInteger maxActive = new AtomicInteger();
+		final Map<String, MonoSink<ProcessedNews>> sinks = new ConcurrentHashMap<>();
+
+		when(summarizationService.summarize(any(ProcessedNews.class), any(NewsClusteringService.Cluster.class), any()))
+			.thenAnswer(invocation -> {
+				final ProcessedNews news = invocation.getArgument(0);
+				return Mono.<ProcessedNews>create(sink -> {
+					sinks.put(news.getId(), sink);
+					final int concurrent = active.incrementAndGet();
+					maxActive.accumulateAndGet(concurrent, Math::max);
+					started.countDown();
+				}).doFinally(signalType -> active.decrementAndGet());
+			});
+
+		final var worker = new NewsPipelineWorkerService(
+			persistence,
+			populateService,
+			embeddingService,
+			summarizationService,
+			clusteringService,
+			properties,
+			similarityProperties,
+			APP_METRICS
+		);
+
+		subscriptions.add(worker.drainOnce().doFinally(signal -> finished.countDown()).subscribe());
+
+		assertTrue(started.await(2, TimeUnit.SECONDS));
+		assertEquals(2, maxActive.get());
+
+		sinks.get("repr-1").success(processed(raw("repr-1")).withContentSummary("summary"));
+		sinks.get("repr-2").success(processed(raw("repr-2")).withContentSummary("summary"));
+
+		assertTrue(finished.await(2, TimeUnit.SECONDS));
 	}
 
 	private static NewsPipelineProperties pipelineProperties() {
@@ -186,7 +265,7 @@ class NewsPipelineWorkerServiceTest {
 		}
 
 		@Override
-		public Flux<RawNews> claimNewsPendingSummary(final int limit, final Duration claimTimeout) {
+		public Flux<RawNews> claimNewsPendingSummary(final int limit, final Duration claimTimeout, final Duration maturityWindow) {
 			return Flux.fromIterable(summaryBatch).take(limit);
 		}
 

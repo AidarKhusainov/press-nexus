@@ -3,6 +3,7 @@ package com.nexus.press.app.service.news;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import java.util.List;
+import com.nexus.press.app.service.ai.summ.SummarizationUseCase;
 import com.nexus.press.app.config.property.NewsPipelineProperties;
 import com.nexus.press.app.config.property.SimilarityProperties;
 import com.nexus.press.app.observability.AppMetrics;
@@ -83,7 +84,8 @@ public class NewsPipelineWorkerService {
 	private Mono<Long> processSummaryBatch() {
 		return newsPersistenceService.claimNewsPendingSummary(
 				newsPipelineProperties.getSummaryBatchSize(),
-				newsPipelineProperties.getClaimTimeout()
+				newsPipelineProperties.getClaimTimeout(),
+				newsPipelineProperties.getSummaryMaturity()
 			)
 			.collectList()
 			.flatMap(batch -> processClaimedSummaryBatch(batch).thenReturn((long) batch.size()));
@@ -116,26 +118,56 @@ public class NewsPipelineWorkerService {
 
 		return Flux.fromIterable(batch)
 			.map(this::toProcessedNews)
-			.flatMap(this::summarizeIfRepresentative, Math.max(1, newsPipelineProperties.getSummaryConcurrency()), 1)
+			.concatMap(this::classifySummaryCandidate)
+			.collectList()
+			.flatMap(assignments -> processRepresentatives(assignments)
+				.then(processDuplicates(assignments)))
 			.then();
 	}
 
-	private Mono<ProcessedNews> summarizeIfRepresentative(final ProcessedNews news) {
+	private Mono<SummaryAssignment> classifySummaryCandidate(final ProcessedNews news) {
 		return newsClusteringService.clusterOf(news.getId(), similarityProperties.getClusterMinScore())
-			.flatMap(cluster -> {
-				final var representativeId = cluster.representativeId();
-				if (representativeId == null || !representativeId.equals(news.getId())) {
-					log.info("Пропускаем суммаризацию не-репрезентативной новости: id={} representative={}", news.getId(), representativeId);
-					return newsPersistenceService.updateStatusSummary(news.getId(), ProcessingStatus.DONE)
-						.thenReturn(news);
-				}
-				return newsSummarizationService.summarize(news);
-			})
-			.onErrorResume(ex -> {
-				log.warn("Сбой summary-stage для новости id={}", news.getId(), ex);
-				return newsPersistenceService.updateStatusSummary(news.getId(), ProcessingStatus.FAILED)
-					.then(Mono.empty());
-			});
+			.map(cluster -> new SummaryAssignment(news, cluster));
+	}
+
+	private Mono<Void> processRepresentatives(final List<SummaryAssignment> assignments) {
+		final List<SummaryAssignment> representatives = assignments.stream()
+			.filter(SummaryAssignment::isRepresentative)
+			.toList();
+		final int concurrency = Math.max(1, newsPipelineProperties.getSummaryConcurrency());
+		return Flux.fromIterable(representatives)
+			.flatMap(assignment -> newsSummarizationService.summarize(
+				assignment.news(),
+				assignment.cluster(),
+				SummarizationUseCase.AUTO_CLUSTER
+			).onErrorResume(ex -> handleSummaryFailure(assignment.news(), ex)), concurrency, 1)
+			.then();
+	}
+
+	private Mono<Void> processDuplicates(final List<SummaryAssignment> assignments) {
+		final List<SummaryAssignment> duplicates = assignments.stream()
+			.filter(assignment -> !assignment.isRepresentative())
+			.toList();
+		final int concurrency = Math.max(1, newsPipelineProperties.getSummaryConcurrency());
+		return Flux.fromIterable(duplicates)
+			.flatMap(assignment -> {
+				log.info(
+					"Пропускаем прямую суммаризацию не-репрезентативной новости: id={} representative={}",
+					assignment.news().getId(),
+					assignment.cluster().representativeId()
+				);
+				return newsSummarizationService.inheritSummary(
+					assignment.news(),
+					assignment.cluster().representativeId()
+				).onErrorResume(ex -> handleSummaryFailure(assignment.news(), ex));
+			}, concurrency, 1)
+			.then();
+	}
+
+	private Mono<ProcessedNews> handleSummaryFailure(final ProcessedNews news, final Throwable ex) {
+		log.warn("Сбой summary-stage для новости id={}", news.getId(), ex);
+		return newsPersistenceService.updateStatusSummary(news.getId(), ProcessingStatus.FAILED)
+			.then(Mono.empty());
 	}
 
 	private static <T> List<List<T>> partition(final List<T> items, final int batchSize) {
@@ -156,8 +188,20 @@ public class NewsPipelineWorkerService {
 			.cleanContent(news.getCleanContent())
 			.source(news.getSource())
 			.publishedDate(news.getPublishedDate())
+			.fetchedDate(news.getFetchedDate())
+			.contentHash(news.getContentHash())
 			.language(news.getLanguage())
 			.build();
+	}
+
+	private record SummaryAssignment(
+		ProcessedNews news,
+		NewsClusteringService.Cluster cluster
+	) {
+
+		private boolean isRepresentative() {
+			return cluster.representativeId() != null && cluster.representativeId().equals(news.getId());
+		}
 	}
 
 	private void recordBacklogMetrics(final NewsPersistenceService.PipelineBacklogSnapshot snapshot) {

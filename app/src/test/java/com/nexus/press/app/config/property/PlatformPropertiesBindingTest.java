@@ -36,8 +36,12 @@ class PlatformPropertiesBindingTest {
 				"platform.gemini.http.retry.max-attempts=5",
 				"platform.gemini.http.retry.backoff=1s",
 				"platform.gemini.http.retry.jitter=0.5",
+				"platform.gemini.retry-on-too-many-requests=false",
 				"platform.gemini.api-key=gemini-key",
 				"platform.gemini.model=gemini-2.5-flash",
+				"platform.gemini.max-requests-per-minute=2",
+				"platform.gemini.max-requests-per-day=20",
+				"platform.gemini.max-input-chars=12000",
 				"platform.groq.http.base-url=https://api.groq.com/openai/v1",
 				"platform.groq.http.timeout.connection=60s",
 				"platform.groq.http.timeout.read=2m",
@@ -83,6 +87,9 @@ class PlatformPropertiesBindingTest {
 				assertThat(context.getBean(OllamaProperties.class).http().baseUrl()).isEqualTo("http://localhost:11434/");
 				assertThat(context.getBean(NewsPlatformProperties.class).http().baseUrl()).isEqualTo("https://example.com");
 				assertThat(context.getBean(GeminiProperties.class).model()).isEqualTo("gemini-2.5-flash");
+				assertThat(context.getBean(GeminiProperties.class).maxRequestsPerMinute()).isEqualTo(2);
+				assertThat(context.getBean(GeminiProperties.class).maxRequestsPerDay()).isEqualTo(20);
+				assertThat(context.getBean(GeminiProperties.class).retryOnTooManyRequests()).isFalse();
 				assertThat(context.getBean(GroqProperties.class).apiKey()).isEqualTo("groq-key");
 				assertThat(context.getBean(CloudflareWorkersAiProperties.class).accountId()).isEqualTo("acc-123");
 				assertThat(context.getBean(MistralProperties.class).model()).isEqualTo("mistral-small-latest");

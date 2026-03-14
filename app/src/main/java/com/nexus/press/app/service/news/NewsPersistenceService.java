@@ -49,6 +49,20 @@ public class NewsPersistenceService {
 		}
 	}
 
+	public record CachedSummary(
+		String model,
+		String lang,
+		String summary
+	) {
+	}
+
+	public record SummaryPriorityCandidate(
+		String newsId,
+		String media,
+		OffsetDateTime eventAt
+	) {
+	}
+
 	public Mono<NewsEntity> upsert(final NewsUpsertRequest req) {
 		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
 		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
@@ -148,7 +162,8 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.media, n.published_at, n.language
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.content_hash,
+			          n.media, n.published_at, n.fetched_at, n.language
 			""";
 
 		return db.sql(sql)
@@ -192,7 +207,8 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.media, n.published_at, n.language
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.content_hash,
+			          n.media, n.published_at, n.fetched_at, n.language
 			""";
 
 		return db.sql(sql)
@@ -202,9 +218,10 @@ public class NewsPersistenceService {
 			.all();
 	}
 
-	public Flux<RawNews> claimNewsPendingSummary(final int limit, final Duration claimTimeout) {
+	public Flux<RawNews> claimNewsPendingSummary(final int limit, final Duration claimTimeout, final Duration maturityWindow) {
 		final int safeLimit = Math.max(1, limit);
 		final long leaseSeconds = safeLeaseSeconds(claimTimeout);
+		final long maturitySeconds = Math.max(0L, maturityWindow == null ? 0L : maturityWindow.toSeconds());
 			final String sql = """
 			WITH claimed AS (
 				SELECT n.id
@@ -213,6 +230,8 @@ public class NewsPersistenceService {
 				  AND n.status_embedding = 'DONE'
 				  AND n.content_clean IS NOT NULL
 				  AND btrim(n.content_clean) <> ''
+				  AND COALESCE(n.published_at, n.fetched_at, n.created_at)
+				      <= now() - (:maturitySeconds * interval '1 second')
 				  AND (
 				       n.status_summary = 'PENDING'
 				       OR (
@@ -233,13 +252,68 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.media, n.published_at, n.language
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.content_hash,
+			          n.media, n.published_at, n.fetched_at, n.language
 			""";
 
 		return db.sql(sql)
 			.bind("leaseSeconds", leaseSeconds)
+			.bind("maturitySeconds", maturitySeconds)
 			.bind("limit", safeLimit)
 			.map(this::mapRawNewsRow)
+			.all();
+	}
+
+	public Mono<CachedSummary> findReusableSummary(final String newsId, final String contentHash, final String lang) {
+		if (!StringUtils.hasText(lang) || !StringUtils.hasText(newsId) && !StringUtils.hasText(contentHash)) {
+			return Mono.empty();
+		}
+
+		final String sql = """
+			SELECT s.model, s.lang, s.summary
+			FROM news_summary s
+			JOIN news n ON n.id = s.news_id
+			WHERE (s.news_id = :newsId OR n.content_hash = :contentHash)
+			  AND s.lang = :lang
+			ORDER BY
+				CASE WHEN s.news_id = :newsId THEN 3 ELSE 0 END DESC,
+				s.created_at DESC
+			LIMIT 1
+			""";
+
+		var spec = db.sql(sql)
+			.bind("lang", lang);
+		spec = bindOrNull(spec, "newsId", newsId, String.class);
+		spec = bindOrNull(spec, "contentHash", contentHash, String.class);
+		return spec.map((row, md) -> new CachedSummary(
+				row.get("model", String.class),
+				row.get("lang", String.class),
+				row.get("summary", String.class)
+			))
+			.one();
+	}
+
+	public Flux<SummaryPriorityCandidate> loadSummaryPriorityCandidates(final OffsetDateTime from) {
+		final String sql = """
+			SELECT n.id AS news_id,
+			       n.media,
+			       COALESCE(n.published_at, n.fetched_at, n.created_at) AS event_at
+			FROM news n
+			WHERE n.status_content = 'DONE'
+			  AND n.status_embedding = 'DONE'
+			  AND n.content_clean IS NOT NULL
+			  AND btrim(n.content_clean) <> ''
+			  AND n.status_summary IN ('PENDING', 'IN_PROGRESS')
+			  AND COALESCE(n.published_at, n.fetched_at, n.created_at) >= :fromTs
+			""";
+
+		return db.sql(sql)
+			.bind("fromTs", from)
+			.map((row, md) -> new SummaryPriorityCandidate(
+				row.get("news_id", String.class),
+				row.get("media", String.class),
+				row.get("event_at", OffsetDateTime.class)
+			))
 			.all();
 	}
 
@@ -495,6 +569,8 @@ public class NewsPersistenceService {
 			.cleanContent(row.get("content_clean", String.class))
 			.source(toMedia(mediaValue))
 			.publishedDate(row.get("published_at", OffsetDateTime.class))
+			.fetchedDate(row.get("fetched_at", OffsetDateTime.class))
+			.contentHash(row.get("content_hash", String.class))
 			.language(row.get("language", String.class))
 			.build();
 	}

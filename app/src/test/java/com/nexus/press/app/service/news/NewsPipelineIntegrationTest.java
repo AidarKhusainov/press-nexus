@@ -36,6 +36,7 @@ import reactor.core.publisher.Mono;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @EnabledIfSystemProperty(named = "db.tests", matches = "true")
@@ -151,6 +152,84 @@ class NewsPipelineIntegrationTest {
 		assertEquals(3L, snapshot.totalOutstanding());
 	}
 
+	@Test
+	void loadPipelineBacklogUsesStatusColumnsForAllStages() {
+		insertNewsStageRow("content-pending", "PENDING", "PENDING", "PENDING", null, null);
+		insertNewsStageRow("content-in-progress", "IN_PROGRESS", "PENDING", "PENDING", null, null);
+		insertNewsStageRow("content-failed", "FAILED", "PENDING", "PENDING", null, null);
+		insertNewsStageRow("embedding-pending", "DONE", "PENDING", "PENDING", "clean embedding", null);
+		insertNewsStageRow("embedding-in-progress", "DONE", "IN_PROGRESS", "PENDING", "clean embedding", null);
+		insertNewsStageRow("embedding-failed", "DONE", "FAILED", "PENDING", "clean embedding", null);
+		insertNewsStageRow("summary-pending", "DONE", "DONE", "PENDING", "clean summary", null);
+		insertEmbedding("summary-pending");
+		insertNewsStageRow("summary-in-progress", "DONE", "DONE", "IN_PROGRESS", "clean summary", null);
+		insertEmbedding("summary-in-progress");
+		insertNewsStageRow("summary-failed", "DONE", "DONE", "FAILED", "clean summary", null);
+		insertEmbedding("summary-failed");
+		insertNewsStageRow("embedding-done-without-vector", "DONE", "DONE", "DONE", "clean no vector", null);
+
+		final var snapshot = new NewsPersistenceService(db)
+			.loadPipelineBacklog()
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(snapshot);
+		assertEquals(1L, snapshot.contentPending());
+		assertEquals(1L, snapshot.contentInProgress());
+		assertEquals(1L, snapshot.contentFailed());
+		assertEquals(2L, snapshot.embeddingPending());
+		assertEquals(1L, snapshot.embeddingInProgress());
+		assertEquals(1L, snapshot.embeddingFailed());
+		assertEquals(1L, snapshot.summaryPending());
+		assertEquals(1L, snapshot.summaryInProgress());
+		assertEquals(1L, snapshot.summaryFailed());
+	}
+
+	@Test
+	void claimSummarySkipsImmatureNewsUntilMaturityWindowPasses() {
+		insertNewsStageRow("summary-old", "DONE", "DONE", "PENDING", "clean old", null);
+		insertNewsStageRow("summary-fresh", "DONE", "DONE", "PENDING", "clean fresh", null);
+
+		db.sql("UPDATE news SET published_at = :publishedAt WHERE id = :id")
+			.bind("publishedAt", OffsetDateTime.now().minusMinutes(30))
+			.bind("id", "summary-old")
+			.fetch()
+			.rowsUpdated()
+			.block(Duration.ofSeconds(5));
+		db.sql("UPDATE news SET published_at = :publishedAt WHERE id = :id")
+			.bind("publishedAt", OffsetDateTime.now().minusMinutes(5))
+			.bind("id", "summary-fresh")
+			.fetch()
+			.rowsUpdated()
+			.block(Duration.ofSeconds(5));
+
+		final var claimedIds = new NewsPersistenceService(db)
+			.claimNewsPendingSummary(10, Duration.ofMinutes(30), Duration.ofMinutes(15))
+			.map(RawNews::getId)
+			.collectList()
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(claimedIds);
+		assertEquals(List.of("summary-old"), claimedIds);
+	}
+
+	@Test
+	void findReusableSummaryRequiresExactLanguageMatch() {
+		insertNewsStageRow("summary-cache", "DONE", "DONE", "DONE", "clean summary", null);
+
+		final var persistenceService = new NewsPersistenceService(db);
+		persistenceService.saveNewsSummary("summary-cache", "GEMINI:model", "ru", "Russian summary", null)
+			.block(Duration.ofSeconds(5));
+
+		final var exact = persistenceService.findReusableSummary("summary-cache", "hash-summary-cache", "ru")
+			.block(Duration.ofSeconds(5));
+		final var mismatch = persistenceService.findReusableSummary(null, "hash-summary-cache", "es")
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(exact);
+		assertEquals("Russian summary", exact.summary());
+		assertNull(mismatch);
+	}
+
 	private void resetNewsTable() {
 		db.sql("TRUNCATE TABLE news CASCADE")
 			.fetch()
@@ -179,6 +258,50 @@ class NewsPipelineIntegrationTest {
 			: spec.bindNull("contentClaimedAt", OffsetDateTime.class);
 		spec.fetch()
 			.rowsUpdated()
+			.block(Duration.ofSeconds(5));
+	}
+
+	private void insertNewsStageRow(
+		final String id,
+		final String statusContent,
+		final String statusEmbedding,
+		final String statusSummary,
+		final String cleanContent,
+		final OffsetDateTime embeddingClaimedAt
+	) {
+		var spec = db.sql("""
+			INSERT INTO news (
+				id, media, url, title, fetched_at, content_raw, content_clean, content_hash,
+				status_content, status_embedding, status_summary, embedding_claimed_at
+			) VALUES (
+				:id, 'BBC', :url, :title, now(), :rawContent, :cleanContent, :contentHash,
+				:statusContent, :statusEmbedding, :statusSummary, :embeddingClaimedAt
+			)
+			""")
+			.bind("id", id)
+			.bind("url", "https://example.com/" + id)
+			.bind("title", "Title " + id)
+			.bind("rawContent", "Raw " + id)
+			.bind("contentHash", "hash-" + id)
+			.bind("statusContent", statusContent)
+			.bind("statusEmbedding", statusEmbedding)
+			.bind("statusSummary", statusSummary);
+		spec = cleanContent != null
+			? spec.bind("cleanContent", cleanContent)
+			: spec.bindNull("cleanContent", String.class);
+		spec = embeddingClaimedAt != null
+			? spec.bind("embeddingClaimedAt", embeddingClaimedAt)
+			: spec.bindNull("embeddingClaimedAt", OffsetDateTime.class);
+		spec.fetch()
+			.rowsUpdated()
+			.block(Duration.ofSeconds(5));
+	}
+
+	private void insertEmbedding(final String id) {
+		final float[] embedding = new float[768];
+		embedding[0] = 1.0f;
+		new PostgresReactiveNewsSimilarityStore(db)
+			.upsertEmbedding(id, embedding)
 			.block(Duration.ofSeconds(5));
 	}
 

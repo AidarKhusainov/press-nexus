@@ -5,6 +5,7 @@ import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.MistralProperties;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 public class MistralSummarizationService extends AbstractOpenAiCompatibleSummarizationService {
@@ -22,6 +23,11 @@ public class MistralSummarizationService extends AbstractOpenAiCompatibleSummari
 	@Override
 	public SummarizationProvider provider() {
 		return SummarizationProvider.MISTRAL;
+	}
+
+	@Override
+	public boolean isConfigured() {
+		return StringUtils.hasText(properties.apiKey()) && StringUtils.hasText(properties.model());
 	}
 
 	@Override

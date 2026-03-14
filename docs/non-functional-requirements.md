@@ -13,6 +13,22 @@
   - connection timeout <= 60s
   - read timeout <= 300s
 - Summarization provider selection must stay configuration-driven; every provider uses the shared HTTP client policy for bounded retries, timeouts, and metrics.
+- Gemini summarization must respect provider guardrails before the HTTP call:
+  - conservative request pacing at or below the configured Gemini RPM guardrail (`2 RPM` by default)
+  - bounded daily request budget aligned with the configured Gemini RPD guardrail (`20 RPD` by default)
+  - bounded input size so oversized articles do not produce opaque `400 BAD_REQUEST`
+  - library-based resilience via `resilience4j` `RateLimiter` and `CircuitBreaker`, so repeated `429`/transient transport failures stop hot-loop retries
+  - shared HTTP retry policy must remain provider-agnostic; provider-specific `429` handling must come from provider-owned logic or per-client configuration, not name-based branching in shared transport code
+- Scarce-provider usage must be optimized for user value:
+  - automatic cluster summarization is limited to daily top-N representatives ranked by cluster size, freshness, and source quality
+  - non-representative duplicates must inherit a cached representative summary instead of calling an external model again
+  - article-level summary cache must be reused by `news_id` and `content_hash` before any provider call
+  - automatic cluster summarization must wait for a short maturity window before spending a provider request on a developing story
+- Summarization routing must support provider failover:
+  - primary provider remains configuration-driven
+  - throttling and transient provider failures must fall through to configured secondary providers before a cheap local fallback is used
+  - budget buckets must keep capacity for automatic clusters, explicit user-facing requests, and reserve/emergency traffic separately
+- Cheap fallback summaries must remain available when all external providers are unavailable; degraded output is acceptable, empty output is not.
 - DB backlog target: pending backlog should stay bounded and observable; alerting is based on backlog size/age, not readiness state.
 - Embedding throughput should use batched backend requests and bounded stage concurrency so backlog can be reduced without unbounded in-memory fan-out.
 - Similarity/clustering must use true cosine semantics for normalized embeddings; any threshold rollout must be validated on real pairwise score distribution before production enablement.

@@ -4,6 +4,7 @@ import reactor.core.publisher.Mono;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.GeminiProperties;
@@ -19,6 +20,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GeminiSummarizationServiceTest {
 
@@ -48,7 +51,7 @@ class GeminiSummarizationServiceTest {
 					}
 					""");
 			}),
-			new GeminiProperties(null, "gemini-key", "gemini-2.5-flash")
+			properties(1_000, 1_000, 12_000)
 		);
 
 		final String summary = service.summarize("Исходный текст", "ru").block();
@@ -57,6 +60,160 @@ class GeminiSummarizationServiceTest {
 		assertEquals("gemini-key", headers.get().getFirst("x-goog-api-key"));
 		assertEquals("press-nexus/0.1.0", headers.get().getFirst("x-goog-api-client"));
 		assertEquals("Первая фраза. Вторая фраза.", summary);
+	}
+
+	@Test
+	void summarizeStopsWhenDailyBudgetIsExhausted() {
+		final var service = new GeminiSummarizationService(
+			stubWebClientConfig(request -> jsonResponse("""
+				{
+				  "candidates": [
+				    {
+				      "content": {
+				        "parts": [
+				          { "text": "ok" }
+				        ]
+				      }
+				    }
+				  ]
+				}
+				""")),
+			properties(1_000, 1, 12_000)
+		);
+
+		assertEquals("ok", service.summarize("Первый текст", "ru").block());
+
+		final var ex = assertThrows(
+			SummarizationThrottledException.class,
+			() -> service.summarize("Второй текст", "ru").block()
+		);
+
+		assertTrue(ex.getMessage().contains("daily budget exhausted"));
+	}
+
+	@Test
+	void summarizeUsesResilience4jRateLimiterForPerMinuteBudget() {
+		final var service = new GeminiSummarizationService(
+			stubWebClientConfig(request -> jsonResponse("""
+				{
+				  "candidates": [
+				    {
+				      "content": {
+				        "parts": [
+				          { "text": "ok" }
+				        ]
+				      }
+				    }
+				  ]
+				}
+				""")),
+			properties(1, 1_000, 12_000)
+		);
+
+		assertEquals("ok", service.summarize("Первый текст", "ru").block());
+
+		final var ex = assertThrows(
+			SummarizationThrottledException.class,
+			() -> service.summarize("Второй текст", "ru").block()
+		);
+
+		assertTrue(ex.getMessage().contains("rate limiter"));
+	}
+
+	@Test
+	void summarizeOpensCircuitBreakerAfterRepeated429Responses() {
+		final AtomicInteger calls = new AtomicInteger();
+		final var service = new GeminiSummarizationService(
+			stubWebClientConfig(request -> {
+				calls.incrementAndGet();
+				return response(429, """
+					{
+					  "error": {
+					    "message": "quota exceeded"
+					  }
+					}
+					""");
+			}),
+			properties(1_000, 1_000, 12_000)
+		);
+
+		for (int i = 0; i < 4; i++) {
+			final int attempt = i;
+			assertThrows(
+				SummarizationThrottledException.class,
+				() -> service.summarize("Текст " + attempt, "ru").block()
+			);
+		}
+
+		final var ex = assertThrows(
+			SummarizationThrottledException.class,
+			() -> service.summarize("Текст 5", "ru").block()
+		);
+
+		assertTrue(ex.getMessage().contains("circuit breaker"));
+		assertEquals(4, calls.get());
+	}
+
+	@Test
+	void summarizeDoesNotBurnDailyBudgetWhenCircuitBreakerRejectsLocally() {
+		final AtomicInteger calls = new AtomicInteger();
+		final var service = new GeminiSummarizationService(
+			stubWebClientConfig(request -> {
+				calls.incrementAndGet();
+				return response(429, """
+					{
+					  "error": {
+					    "message": "quota exceeded"
+					  }
+					}
+					""");
+			}),
+			properties(1_000, 5, 12_000)
+		);
+
+		for (int i = 0; i < 4; i++) {
+			final int attempt = i;
+			assertThrows(
+				SummarizationThrottledException.class,
+				() -> service.summarize("Текст " + attempt, "ru").block()
+			);
+		}
+
+		final var fifth = assertThrows(
+			SummarizationThrottledException.class,
+			() -> service.summarize("Текст 5", "ru").block()
+		);
+		final var sixth = assertThrows(
+			SummarizationThrottledException.class,
+			() -> service.summarize("Текст 6", "ru").block()
+		);
+
+		assertTrue(fifth.getMessage().contains("circuit breaker"));
+		assertTrue(sixth.getMessage().contains("circuit breaker"));
+		assertEquals(4, calls.get());
+	}
+
+	@Test
+	void summarizeIncludesResponseBodyForBadRequest() {
+		final var service = new GeminiSummarizationService(
+			stubWebClientConfig(request -> response(400, """
+				{
+				  "error": {
+				    "message": "Request payload too large"
+				  }
+				}
+				""")),
+			properties(1_000, 1_000, 16)
+		);
+
+		final var ex = assertThrows(
+			IllegalStateException.class,
+			() -> service.summarize("Очень длинный текст для усечения и диагностики", "ru").block()
+		);
+
+		assertTrue(ex.getMessage().contains("Gemini bad request"));
+		assertTrue(ex.getMessage().contains("Request payload too large"));
+		assertTrue(ex.getMessage().contains("inputChars=16"));
 	}
 
 	private static WebClientConfig stubWebClientConfig(final ExchangeFunction exchangeFunction) {
@@ -80,9 +237,29 @@ class GeminiSummarizationServiceTest {
 		return new HttpClientProperties(Map.of(HttpClientName.GEMINI, cfg));
 	}
 
+	private static GeminiProperties properties(
+		final int maxRequestsPerMinute,
+		final int maxRequestsPerDay,
+		final int maxInputChars
+	) {
+		return new GeminiProperties(
+			null,
+			"gemini-key",
+			"gemini-2.5-flash",
+			false,
+			maxRequestsPerMinute,
+			maxRequestsPerDay,
+			maxInputChars
+		);
+	}
+
 	private static Mono<ClientResponse> jsonResponse(final String body) {
+		return response(200, body);
+	}
+
+	private static Mono<ClientResponse> response(final int status, final String body) {
 		return Mono.just(
-			ClientResponse.create(HttpStatusCode.valueOf(200))
+			ClientResponse.create(HttpStatusCode.valueOf(status))
 				.header("Content-Type", "application/json")
 				.body(body)
 				.build()

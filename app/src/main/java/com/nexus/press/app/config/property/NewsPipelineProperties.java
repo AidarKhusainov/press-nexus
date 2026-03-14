@@ -18,6 +18,7 @@ public class NewsPipelineProperties {
 	private int contentBatchSize = 24;
 	private int embeddingBatchSize = 8;
 	private int summaryBatchSize = 8;
+	private Duration summaryMaturity = Duration.ofMinutes(15);
 	private int populateConcurrency = 6;
 	private int embeddingConcurrency = 2;
 	private int summaryConcurrency = 2;

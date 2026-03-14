@@ -35,7 +35,7 @@ Use GitHub Actions CD for normal production rollouts.
 ### Optional GitHub Variables
 
 - `PRESS_DB_USER` - defaults to `pressnexus`
-- `PRESS_DELIVERY_TELEGRAM_ENABLED` - defaults to `false`
+- `PRESS_DELIVERY_TELEGRAM_ENABLED` - defaults to `true`
 - `PRESS_OTLP_TRACING_ENABLED` - defaults to `false`
 - `PRESS_PUBLIC_DOMAIN` - defaults to `press-nexus.censor-amoroso.com`
 - `APP_BIND_ADDRESS` - defaults to `127.0.0.1`

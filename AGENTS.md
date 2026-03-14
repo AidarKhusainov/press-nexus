@@ -126,14 +126,51 @@ The agent must not treat a task as complete if any mandatory gate is expected to
 - Prefer constructor injection (`@RequiredArgsConstructor`).
 - Avoid noisy refactors outside task scope.
 
-## 10) Safety Rules For Agents
+## 10) Design And Architecture Guardrails
+
+- Prefer simple, explicit, readable code over clever or overly compressed code.
+- Keep code ownership clear: business rules belong in business services, infrastructure rules belong in infrastructure layers.
+- Shared infrastructure must stay generic. `config`, `http`, `db`, `messaging`, schedulers, and common support code must not contain provider-specific or feature-specific branching when that logic can live in the owning service.
+- Do not hardcode special cases such as `if client == GEMINI`, `switch(provider)` in unrelated layers, or name/enum-based branching as a substitute for proper abstractions.
+- If behavior differs by provider/integration/feature, prefer one of:
+  - provider-owned logic in the provider implementation
+  - per-client or per-feature configuration
+  - injected strategy/policy interfaces
+- Configuration and composition are preferred over conditional branching in shared code.
+- Preserve architectural boundaries. Do not solve a local feature problem by increasing coupling between unrelated modules.
+- Before changing a shared layer, first ask whether the decision can be pushed one layer closer to the real owner of the behavior.
+- Tactical fixes in shared code are not acceptable if a cleaner design is reasonable within the current task scope.
+- If a tactical shortcut is truly necessary, it must be:
+  - explicitly called out as temporary technical debt
+  - justified in the final response
+  - localized so future cleanup is small
+- Avoid “enum-driven architecture”: cross-layer `switch`/`if` trees on types, providers, channels, or client names are a code smell unless the enum is the natural owner of the behavior.
+- New code should reduce ambiguity, not add it:
+  - method names should match real behavior
+  - responsibilities should be narrow
+  - side effects should be easy to see
+  - hidden coupling should be avoided
+- Keep APIs and flows unsurprising. A generic component must not silently encode product policy.
+- Prefer designs that remain easy to extend without editing existing unrelated code paths.
+
+## 11) Code Cleanliness Bar
+
+- New code must be easy to review quickly: low nesting, clear naming, minimal incidental complexity.
+- Avoid speculative abstractions, but also avoid copy-pasted policy logic spread across multiple classes.
+- Do not introduce “temporary” hacks, magic constants, or ad hoc conditionals without naming and encapsulating them properly.
+- Comments must explain non-obvious intent, not compensate for confusing structure.
+- Error handling must preserve correctness first; do not hide bugs behind broad fallbacks unless that degraded path is explicitly required.
+- When multiple correct implementations exist, choose the one with lower coupling, clearer boundaries, and easier testability.
+- Tests should verify behavior at the layer where the rule lives. Do not rely only on indirect coverage for important policy decisions.
+
+## 12) Safety Rules For Agents
 
 - Change only files relevant to the task.
 - Do not remove working functionality without explicit request.
 - If unexpected changes are found in working tree, stop and align.
 - Do not revert other people’s changes without direct user instruction.
 
-## 11) Definition Of Done For Agent Response
+## 13) Definition Of Done For Agent Response
 
 In the final response, the agent must provide:
 
@@ -143,7 +180,7 @@ In the final response, the agent must provide:
 - What remains/limitations (if any).
 - Risks and rollback considerations (if applicable).
 
-## 12) Helpful Commands
+## 14) Helpful Commands
 
 - Full local verify: `./mvnw -B -ntp clean verify`
 - Full CI-equivalent verify: `./mvnw -B -ntp clean verify -Ddb.tests=true`
