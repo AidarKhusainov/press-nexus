@@ -30,7 +30,7 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<jsoup.version>1.19.1</jsoup.version>
 		<maven.enforcer.version>3.5.0</maven.enforcer.version>
-		<maven.failsafe.version>3.5.3</maven.failsafe.version>
+		<maven.failsafe.version>3.5.5</maven.failsafe.version>
 		<maven.jacoco.version>0.8.12</maven.jacoco.version>
 		<maven.checkstyle.version>3.6.0</maven.checkstyle.version>
 		<spotbugs.maven.plugin.version>4.9.2.0</spotbugs.maven.plugin.version>
