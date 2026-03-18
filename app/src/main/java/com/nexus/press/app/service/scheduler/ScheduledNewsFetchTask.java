@@ -48,16 +48,18 @@ public class ScheduledNewsFetchTask {
 		}
 	}
 
-	private Flux<?> runFetchCycle(final String cycleName) {
+	Flux<?> runFetchCycle(final String cycleName) {
 		final var timerSample = appMetrics.startJobTimer();
 		return newsPersistenceService.loadPipelineBacklog()
 			.flatMapMany(snapshot -> {
 				recordBacklog(snapshot);
-				if (snapshot.totalOutstanding() >= newsPipelineProperties.getDiscoveryBacklogHighWatermark()) {
+				final long discoveryBlockingBacklog = snapshot.discoveryBlockingOutstanding();
+				if (discoveryBlockingBacklog >= newsPipelineProperties.getDiscoveryBacklogHighWatermark()) {
 					appMetrics.jobSkipped(cycleName, "high_backlog");
 					log.info(
-						"Пропускаем discovery [{}]: backlog={} threshold={}",
+						"Пропускаем discovery [{}]: activeIngestBacklog={} totalBacklog={} threshold={}",
 						cycleName,
+						discoveryBlockingBacklog,
 						snapshot.totalOutstanding(),
 						newsPipelineProperties.getDiscoveryBacklogHighWatermark()
 					);

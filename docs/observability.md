@@ -36,6 +36,7 @@ Any new critical flow must include at least one metric and one actionable log ev
   - `press.pipeline.stage.duration{stage,outcome}`
   - `press.jobs.runs{job,outcome}`
   - `press.jobs.skipped{job,reason}` for discovery throttling on high backlog
+- Scheduler dashboards should track `news_pipeline_worker_ingestion` and `news_pipeline_worker_summary` separately so long summary runs do not mask stalled ingest/content/embed work.
 - Pipeline backlog should be inspected from metrics/dashboard first; if ad-hoc SQL is needed, the `news` table uses `status_content`, `status_embedding`, and `status_summary`.
 - Embedding throughput tuning must be validated against `press.pipeline.backlog{stage="embedding",state=~"pending|in_progress"}`, `press.pipeline.stage.duration{stage="embedding"}`, and `press_http_client_duration_seconds{client="OLLAMA"}`.
 - Summarization provider rollouts must be validated against `press_http_client_duration_seconds{client=~"GEMINI|GROQ|CLOUDFLARE_WORKERS_AI|MISTRAL"}` and matching external error metrics before switching `press.ai.summarization.provider` in production.
@@ -53,5 +54,6 @@ Any new critical flow must include at least one metric and one actionable log ev
   - the fallback-provider success/failure log entry
   - external HTTP metrics by provider, to confirm whether traffic shifted away from a throttled or degraded vendor
 - Backlog dashboards and alerts should distinguish `pending`/`in_progress` from `failed`; only active backlog should drive discovery throttling.
+- Discovery skip logs/metrics should be interpreted against active ingest backlog first; `totalBacklog` is diagnostic context and must not be treated as the throttle input by itself.
 - Readiness must reflect app/runtime dependencies; backlog is an alert/SLO signal, not a readiness gate.
 - Similarity threshold changes must be validated with cluster-size distribution checks so representative-news selection does not collapse into giant connected components.

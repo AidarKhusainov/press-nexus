@@ -12,6 +12,7 @@
 - External HTTP timeouts:
   - connection timeout <= 60s
   - read timeout <= 300s
+- TLS handshake timeout for HTTPS clients must be derived from the configured client timeout budget and must not silently fall back to shorter transport defaults.
 - Summarization provider selection must stay configuration-driven; every provider uses the shared HTTP client policy for bounded retries, timeouts, and metrics.
 - Gemini summarization must respect provider guardrails before the HTTP call:
   - conservative request pacing at or below the configured Gemini RPM guardrail (`2 RPM` by default)
@@ -30,6 +31,7 @@
   - budget buckets must keep capacity for automatic clusters, explicit user-facing requests, and reserve/emergency traffic separately
 - Cheap fallback summaries must remain available when all external providers are unavailable; degraded output is acceptable, empty output is not.
 - DB backlog target: pending backlog should stay bounded and observable; alerting is based on backlog size/age, not readiness state.
+- Discovery throttling must be driven only by active ingest backlog (`content`/`embedding` pending or leased work); stale `summary` or `FAILED` backlog must remain observable without pausing new fetch cycles.
 - Embedding throughput should use batched backend requests and bounded stage concurrency so backlog can be reduced without unbounded in-memory fan-out.
 - Similarity/clustering must use true cosine semantics for normalized embeddings; any threshold rollout must be validated on real pairwise score distribution before production enablement.
 
@@ -37,6 +39,7 @@
 
 - Pipeline stages must be idempotent.
 - Retries must be bounded and observable.
+- Transport-level request failures and timeouts from external HTTP clients must remain retryable unless a per-client policy explicitly disables them.
 - Any external dependency failure should degrade gracefully, not crash the whole app.
 - Stage workers must use claim/lease semantics so parallel workers do not process the same item concurrently.
 - `FAILED` items must not silently re-enter the hot backlog without an explicit recovery policy.

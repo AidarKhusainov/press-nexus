@@ -2,9 +2,13 @@ package com.nexus.press.app.config;
 
 import io.netty.handler.timeout.ReadTimeoutException;
 import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.ssl.SslHandshakeTimeoutException;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.http.Http11SslContextSpec;
 import reactor.util.retry.Retry;
+import java.net.URI;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.UUID;
@@ -108,12 +112,18 @@ public class WebClientConfig {
 			throw new IllegalArgumentException("Configuration for WebClient '" + clientName + "' not found");
 		}
 
-		final var httpClient = HttpClient.create()
+		var httpClient = HttpClient.create()
 			.followRedirect(true)
 			.responseTimeout(config.timeout().read())
 			.doOnConnected(conn -> conn
 				.addHandlerLast(new ReadTimeoutHandler(config.timeout().read().toSeconds(), TimeUnit.SECONDS)))
 			.option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) config.timeout().connection().toMillis());
+		if (usesTls(config.baseUrl())) {
+			httpClient = httpClient.secure(sslSpec -> {
+				sslSpec.sslContext(Http11SslContextSpec.forClient())
+					.handshakeTimeout(resolveHandshakeTimeout(config.timeout()));
+			});
+		}
 
 		return WebClient.builder()
 			.baseUrl(config.baseUrl())
@@ -202,14 +212,47 @@ public class WebClientConfig {
 			}
 			return e.getStatusCode().is5xxServerError();
 		}
-		return throwable instanceof IOException
-			|| throwable instanceof TimeoutException
-			|| throwable.getCause() instanceof ReadTimeoutException;
+		if (throwable instanceof WebClientRequestException) {
+			return true;
+		}
+		return hasRetryableTransportCause(throwable);
+	}
+
+	Duration resolveHandshakeTimeout(final HttpClientProperties.Timeout timeout) {
+		final Duration connectionTimeout = timeout == null || timeout.connection() == null
+			? Duration.ofSeconds(30)
+			: timeout.connection();
+		final Duration readTimeout = timeout == null || timeout.read() == null
+			? connectionTimeout
+			: timeout.read();
+		return connectionTimeout.compareTo(readTimeout) >= 0 ? connectionTimeout : readTimeout;
+	}
+
+	boolean usesTls(final String baseUrl) {
+		try {
+			return "https".equalsIgnoreCase(URI.create(baseUrl).getScheme());
+		} catch (final Exception ex) {
+			return false;
+		}
 	}
 
 	private boolean isExpectedExternalCallError(final Throwable throwable) {
 		return throwable instanceof WebClientRequestException
 			|| throwable instanceof WebClientResponseException;
+	}
+
+	private boolean hasRetryableTransportCause(final Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof IOException
+				|| current instanceof TimeoutException
+				|| current instanceof ReadTimeoutException
+				|| current instanceof SslHandshakeTimeoutException) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
 	}
 
 	private static Map<HttpClientName, HttpClientProperties.ClientConfig> buildClientProperties(

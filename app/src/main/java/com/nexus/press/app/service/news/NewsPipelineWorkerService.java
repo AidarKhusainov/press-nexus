@@ -34,6 +34,41 @@ public class NewsPipelineWorkerService {
 	private final SimilarityProperties similarityProperties;
 	private final AppMetrics appMetrics;
 
+	public Mono<DrainResult> drainIngestionOnce() {
+		final var timerSample = appMetrics.startJobTimer();
+
+		return processContentBatch()
+			.flatMap(contentClaimed -> processEmbeddingBatch()
+				.map(embeddingClaimed -> new DrainResult(contentClaimed, embeddingClaimed, 0)))
+			.flatMap(result -> refreshBacklogMetrics().thenReturn(result))
+			.doOnSuccess(result -> {
+				appMetrics.jobSuccess("news_pipeline_worker_ingestion", timerSample);
+				if (result.contentClaimed() > 0 || result.embeddingClaimed() > 0) {
+					log.info(
+						"News pipeline ingestion drained: content={} embedding={}",
+						result.contentClaimed(),
+						result.embeddingClaimed()
+					);
+				}
+			})
+			.doOnError(error -> appMetrics.jobFailure("news_pipeline_worker_ingestion", timerSample, error));
+	}
+
+	public Mono<DrainResult> drainSummaryOnce() {
+		final var timerSample = appMetrics.startJobTimer();
+
+		return processSummaryBatch()
+			.map(summaryClaimed -> new DrainResult(0, 0, summaryClaimed))
+			.flatMap(result -> refreshBacklogMetrics().thenReturn(result))
+			.doOnSuccess(result -> {
+				appMetrics.jobSuccess("news_pipeline_worker_summary", timerSample);
+				if (result.summaryClaimed() > 0) {
+					log.info("News pipeline summary drained: summary={}", result.summaryClaimed());
+				}
+			})
+			.doOnError(error -> appMetrics.jobFailure("news_pipeline_worker_summary", timerSample, error));
+	}
+
 	public Mono<DrainResult> drainOnce() {
 		final var timerSample = appMetrics.startJobTimer();
 

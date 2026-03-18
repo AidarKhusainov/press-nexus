@@ -274,6 +274,7 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 		DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.ENGLISH);
 	private static final DateTimeFormatter SPACE_OFFSET_NO_COLON =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssZ", Locale.ENGLISH);
+	private static final Pattern ZERO_PADDED_YEAR_PATTERN = Pattern.compile("^00(\\d{2})(?=[-/.T ])");
 
 	private final WebClient webClient;
 	private final NewsPipelineProperties newsPipelineProperties;
@@ -534,31 +535,49 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 		final var value = raw.trim();
 
 		try {
-			return ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toOffsetDateTime();
+			return normalizePublishedAt(value, ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toOffsetDateTime());
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return OffsetDateTime.parse(value, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+			return normalizePublishedAt(value, OffsetDateTime.parse(value, DateTimeFormatter.ISO_OFFSET_DATE_TIME));
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return ZonedDateTime.parse(value, DateTimeFormatter.ISO_ZONED_DATE_TIME).toOffsetDateTime();
+			return normalizePublishedAt(value, ZonedDateTime.parse(value, DateTimeFormatter.ISO_ZONED_DATE_TIME).toOffsetDateTime());
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return Instant.parse(value).atOffset(ZoneOffset.UTC);
+			return normalizePublishedAt(value, Instant.parse(value).atOffset(ZoneOffset.UTC));
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atOffset(ZoneOffset.UTC);
+			return normalizePublishedAt(value, LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atOffset(ZoneOffset.UTC));
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return OffsetDateTime.parse(value, ISO_OFFSET_NO_COLON);
+			return normalizePublishedAt(value, OffsetDateTime.parse(value, ISO_OFFSET_NO_COLON));
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return OffsetDateTime.parse(value, ISO_OFFSET_MILLIS_NO_COLON);
+			return normalizePublishedAt(value, OffsetDateTime.parse(value, ISO_OFFSET_MILLIS_NO_COLON));
 		} catch (final DateTimeParseException ignored) {}
 		try {
-			return OffsetDateTime.parse(value, SPACE_OFFSET_NO_COLON);
+			return normalizePublishedAt(value, OffsetDateTime.parse(value, SPACE_OFFSET_NO_COLON));
 		} catch (final DateTimeParseException ignored) {}
 
 		return OffsetDateTime.now();
+	}
+
+	private OffsetDateTime normalizePublishedAt(final String raw, final OffsetDateTime parsed) {
+		if (parsed.getYear() >= 100) {
+			return parsed;
+		}
+
+		final var matcher = ZERO_PADDED_YEAR_PATTERN.matcher(raw);
+		if (!matcher.find()) {
+			return parsed;
+		}
+
+		final int repairedYear = 2000 + Integer.parseInt(matcher.group(1));
+		if (repairedYear > OffsetDateTime.now().plusYears(1).getYear()) {
+			return parsed;
+		}
+
+		return parsed.withYear(repairedYear);
 	}
 
 	private String stableId(final Media media, final String title, final String description, final OffsetDateTime publishedAt) {

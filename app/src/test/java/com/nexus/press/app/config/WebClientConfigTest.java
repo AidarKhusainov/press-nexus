@@ -1,16 +1,22 @@
 package com.nexus.press.app.config;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.netty.handler.ssl.SslHandshakeTimeoutException;
+import java.net.URI;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
 import com.nexus.press.app.observability.AppMetrics;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebClientConfigTest {
@@ -49,6 +55,41 @@ class WebClientConfigTest {
 		));
 	}
 
+	@Test
+	void retryPolicyTreatsTransportRequestExceptionsAsRetryable() {
+		final var config = new WebClientConfig(
+			defaultProperties(),
+			retryPolicies(false),
+			APP_METRICS
+		);
+
+		assertTrue(config.isRetryableError(
+			HttpClientName.GROQ,
+			new WebClientRequestException(
+				new SslHandshakeTimeoutException("handshake timed out"),
+				HttpMethod.POST,
+				URI.create("https://api.telegram.org"),
+				HttpHeaders.EMPTY
+			)
+		));
+	}
+
+	@Test
+	void resolveHandshakeTimeoutUsesLargestConfiguredTimeout() {
+		final var config = new WebClientConfig(
+			defaultProperties(),
+			retryPolicies(false),
+			APP_METRICS
+		);
+
+		assertEquals(
+			Duration.ofSeconds(45),
+			config.resolveHandshakeTimeout(new HttpClientProperties.Timeout(Duration.ofSeconds(10), Duration.ofSeconds(45)))
+		);
+		assertTrue(config.usesTls("https://api.telegram.org"));
+		assertFalse(config.usesTls("http://localhost:11434"));
+	}
+
 	private static HttpClientProperties defaultProperties() {
 		final var cfg = new HttpClientProperties.ClientConfig(
 			"http://provider",
@@ -57,7 +98,8 @@ class WebClientConfigTest {
 		);
 		return new HttpClientProperties(Map.of(
 			HttpClientName.GEMINI, cfg,
-			HttpClientName.GROQ, cfg
+			HttpClientName.GROQ, cfg,
+			HttpClientName.TELEGRAM, cfg
 		));
 	}
 

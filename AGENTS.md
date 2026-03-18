@@ -187,3 +187,13 @@ In the final response, the agent must provide:
 - Regenerate OpenAPI HTTP controllers: `./mvnw -B -ntp -pl app generate-sources`
 - Contract tests only: `./mvnw -B -ntp -pl app -Dtest='*ContractTest' test`
 - Start local infra: `docker compose -f docker/compose.yml up -d app`
+
+## 15) SSH Remote Execution
+
+- For remote commands on the production host, use the SSH alias `press-nexus.com`.
+- Before executing remote commands, check whether a master connection already exists:
+  - `ssh -O check press-nexus.com`
+- If the master connection does not exist, create it first:
+  - `ssh -fN press-nexus.com`
+- After that, execute all remote commands through the alias:
+  - `ssh press-nexus.com "<command>"`

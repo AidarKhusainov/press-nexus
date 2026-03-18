@@ -42,6 +42,11 @@ public class NewsPersistenceService {
 		long summaryFailed
 	) {
 
+		public long discoveryBlockingOutstanding() {
+			return contentPending + contentInProgress
+				+ embeddingPending + embeddingInProgress;
+		}
+
 		public long totalOutstanding() {
 			return contentPending + contentInProgress
 				+ embeddingPending + embeddingInProgress

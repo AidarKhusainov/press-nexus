@@ -92,6 +92,29 @@ class PopularRssFetchProcessorTest {
 	}
 
 	@Test
+	void parseFeedRepairsZeroPaddedCenturyInPublishedDate() throws Exception {
+		final var xml = """
+			<rss version="2.0">
+			  <channel>
+			    <item>
+			      <guid>kubnews-1</guid>
+			      <title>Malformed year</title>
+			      <link>https://example.com/kubnews-1</link>
+			      <description>desc</description>
+			      <pubDate>0026-03-11T10:15:30+03:00</pubDate>
+			    </item>
+			  </channel>
+			</rss>
+			""";
+
+		final var processor = new PopularRssFetchProcessor(webClientConfig(), newsPipelineProperties());
+		final var parsed = parseFeed(processor, xml, Media.KUBNEWS, "https://feed.example/rss", "ru");
+
+		assertEquals(1, parsed.size());
+		assertEquals(OffsetDateTime.parse("2026-03-11T10:15:30+03:00"), parsed.getFirst().getPublishedDate());
+	}
+
+	@Test
 	void parseFeedSkipsItemsWithoutLink() throws Exception {
 		final var xml = """
 			<rss version="2.0">

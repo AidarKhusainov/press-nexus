@@ -138,6 +138,89 @@ class NewsPipelineWorkerServiceTest {
 	}
 
 	@Test
+	void drainIngestionOnceProcessesOnlyContentAndEmbeddingStages() {
+		final var persistence = new StubPersistenceService(
+			List.of(raw("content-1")),
+			List.of(raw("embedding-1")),
+			List.of(raw("repr-1"))
+		);
+		final var populateService = mock(NewsPopulateContentService.class);
+		final var embeddingService = mock(NewsEmbeddingService.class);
+		final var summarizationService = mock(NewsSummarizationService.class);
+		final var clusteringService = mock(NewsClusteringService.class);
+
+		when(populateService.populate(any(RawNews.class))).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+		when(embeddingService.embedBatch(any())).thenAnswer(invocation -> {
+			@SuppressWarnings("unchecked")
+			final List<RawNews> batch = invocation.getArgument(0);
+			return Mono.just(batch.stream().map(NewsPipelineWorkerServiceTest::processed).toList());
+		});
+
+		final var worker = new NewsPipelineWorkerService(
+			persistence,
+			populateService,
+			embeddingService,
+			summarizationService,
+			clusteringService,
+			pipelineProperties(),
+			new SimilarityProperties(),
+			APP_METRICS
+		);
+
+		final var result = worker.drainIngestionOnce().block();
+
+		assertEquals(1L, result.contentClaimed());
+		assertEquals(1L, result.embeddingClaimed());
+		assertEquals(0L, result.summaryClaimed());
+		verify(populateService).populate(any(RawNews.class));
+		verify(embeddingService).embedBatch(any());
+		verifyNoMoreInteractions(summarizationService, clusteringService);
+	}
+
+	@Test
+	void drainSummaryOnceProcessesOnlySummaryStage() {
+		final var persistence = new StubPersistenceService(
+			List.of(raw("content-1")),
+			List.of(raw("embedding-1")),
+			List.of(raw("repr-1"), raw("dup-1"))
+		);
+		final var populateService = mock(NewsPopulateContentService.class);
+		final var embeddingService = mock(NewsEmbeddingService.class);
+		final var summarizationService = mock(NewsSummarizationService.class);
+		final var clusteringService = mock(NewsClusteringService.class);
+		final var similarityProperties = new SimilarityProperties();
+
+		when(clusteringService.clusterOf(eq("repr-1"), eq(similarityProperties.getClusterMinScore())))
+			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-1", "dup-1"), "repr-1")));
+		when(clusteringService.clusterOf(eq("dup-1"), eq(similarityProperties.getClusterMinScore())))
+			.thenReturn(Mono.just(new NewsClusteringService.Cluster(java.util.Set.of("repr-1", "dup-1"), "repr-1")));
+		when(summarizationService.summarize(any(ProcessedNews.class), any(NewsClusteringService.Cluster.class), any()))
+			.thenAnswer(invocation -> Mono.just(((ProcessedNews) invocation.getArgument(0)).withContentSummary("summary")));
+		when(summarizationService.inheritSummary(any(ProcessedNews.class), eq("repr-1")))
+			.thenAnswer(invocation -> Mono.just(((ProcessedNews) invocation.getArgument(0)).withContentSummary("summary")));
+
+		final var worker = new NewsPipelineWorkerService(
+			persistence,
+			populateService,
+			embeddingService,
+			summarizationService,
+			clusteringService,
+			pipelineProperties(),
+			similarityProperties,
+			APP_METRICS
+		);
+
+		final var result = worker.drainSummaryOnce().block();
+
+		assertEquals(0L, result.contentClaimed());
+		assertEquals(0L, result.embeddingClaimed());
+		assertEquals(2L, result.summaryClaimed());
+		verify(summarizationService).summarize(any(ProcessedNews.class), any(NewsClusteringService.Cluster.class), any());
+		verify(summarizationService).inheritSummary(any(ProcessedNews.class), eq("repr-1"));
+		verifyNoMoreInteractions(populateService, embeddingService);
+	}
+
+	@Test
 	void drainOncePreservesConfiguredSummaryConcurrencyForRepresentatives() throws Exception {
 		final var persistence = new StubPersistenceService(
 			List.of(),
