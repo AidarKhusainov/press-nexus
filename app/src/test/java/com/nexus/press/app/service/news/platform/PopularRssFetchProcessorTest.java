@@ -55,7 +55,8 @@ class PopularRssFetchProcessorTest {
 
 		assertEquals(1, parsed.size());
 		final var news = parsed.getFirst();
-		assertEquals("bbc-1", news.getId());
+		assertEquals("https://example.com/1", news.getId());
+		assertEquals("bbc-1", news.getExternalId());
 		assertEquals("https://example.com/1", news.getLink());
 		assertEquals("Title One", news.getTitle());
 		assertEquals("Hello world.", news.getDescription());
@@ -199,7 +200,8 @@ class PopularRssFetchProcessorTest {
 
 			assertNotNull(parsed);
 			assertEquals(1, parsed.size());
-			assertEquals("ok-1", parsed.getFirst().getId());
+			assertEquals("https://example.com/ok", parsed.getFirst().getId());
+			assertEquals("ok-1", parsed.getFirst().getExternalId());
 			assertEquals("https://example.com/ok", parsed.getFirst().getLink());
 		} finally {
 			server.stop(0);

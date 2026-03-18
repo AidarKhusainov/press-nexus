@@ -45,7 +45,7 @@ public class NewsFetchService {
 		final var req = NewsUpsertRequest.builder()
 			.id(news.getId())
 			.media(news.getSource().name())
-			.externalId(null)
+			.externalId(news.getExternalId())
 			.url(news.getLink())
 			.title(news.getTitle())
 			.author(null)

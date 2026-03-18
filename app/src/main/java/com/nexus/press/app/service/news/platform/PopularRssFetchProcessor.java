@@ -460,7 +460,7 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	}
 
 	private java.util.Optional<RawNews> mapItem(final Element elem, final FeedDefinition feed) {
-		final var guid = firstNonBlank(
+		final var externalId = firstNonBlank(
 			textOf(elem, "guid"),
 			textOf(elem, "id")
 		);
@@ -490,10 +490,11 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 			textOf(elem, "dc:date")
 		));
 		final var language = firstNonBlank(textOf(elem, "language"), feed.language());
-		final var id = firstNonBlank(guid, resolvedLink, stableId(feed.media(), title, description, publishedAt));
+		final var id = firstNonBlank(resolvedLink, externalId, stableId(feed.media(), title, description, publishedAt));
 
 		return java.util.Optional.of(RawNews.builder()
 			.id(id)
+			.externalId(externalId)
 			.link(resolvedLink)
 			.title(normalizeText(title))
 			.description(description)

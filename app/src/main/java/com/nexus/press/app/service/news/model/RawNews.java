@@ -18,6 +18,7 @@ import lombok.experimental.SuperBuilder;
 public class RawNews {
 
 	private final String id;
+	private final String externalId;
 	private final String link;
 	private final String title;
 	private final String description;

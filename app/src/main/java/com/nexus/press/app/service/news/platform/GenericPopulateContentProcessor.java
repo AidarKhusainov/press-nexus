@@ -49,7 +49,7 @@ public class GenericPopulateContentProcessor implements NewsPopulateContentProce
 			.headers(HtmlContentSupport::applyBrowserHeaders)
 			.retrieve()
 			.bodyToMono(String.class)
-			.map(html -> HtmlContentSupport.extractArticleText(html, HtmlContentSupport.GENERIC_ARTICLE_SELECTORS))
+			.map(html -> HtmlContentSupport.extractArticleText(news, html, HtmlContentSupport.GENERIC_ARTICLE_SELECTORS))
 			.map(text -> text.isBlank() ? HtmlContentSupport.fallbackFromDescription(news) : text)
 			.map(news::withRawContent)
 			.onErrorResume(ex -> {

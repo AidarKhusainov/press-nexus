@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
+import com.nexus.press.app.service.news.model.Media;
+import com.nexus.press.app.service.news.model.RawNews;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -19,6 +21,8 @@ public class NewsContentCleaner {
 	private static final Pattern MULTI_BREAK = Pattern.compile("(?:\\R\\s*){2,}");
 	private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
 	private static final Pattern TIME_PATTERN = Pattern.compile("\\b\\d{1,2}:\\d{2}\\b");
+	private static final Pattern COMMENT_TIMESTAMP_PATTERN = Pattern.compile("\\b\\d{2}:\\d{2}:\\d{2}\\s+\\d{2}-\\d{2}-\\d{4}\\b");
+	private static final Pattern TUVA_DATES_PATTERN = Pattern.compile("\\b\\d+\\)\\s+\\d{2}\\.\\d{2}\\.\\d{4}:");
 
 	private static final List<String> HARD_STOP_MARKERS = List.of(
 		"читайте также",
@@ -30,7 +34,9 @@ public class NewsContentCleaner {
 		"вход на сайт",
 		"восстановление пароля",
 		"чтобы участвовать в дискуссии",
-		"правила для комментариев"
+		"правила для комментариев",
+		"правила комментирования материалов",
+		"ранее мы писали"
 	);
 
 	private static final List<String> DISCARD_MARKERS = List.of(
@@ -48,16 +54,50 @@ public class NewsContentCleaner {
 		"editor's note:",
 		"the views expressed in this commentary",
 		"the content is produced solely by the conversation",
-		"our live coverage for the day has ended"
+		"our live coverage for the day has ended",
+		"выскажись!",
+		"перейти в фотобанк",
+		"подробности на сайте",
+		"показать еще"
 	);
 
+	private static final List<String> INLINE_HARD_STOP_MARKERS = List.of(
+		"подробнее: https://",
+		"подробнее: http://",
+		"все важные новости",
+		"самые важные и оперативные новости",
+		"данный сайт использует файлы cookies",
+		"учредитель и главный редактор",
+		"использование материалов допускается только",
+		"правил комментирования материалов",
+		"правила комментирования материалов",
+		"ранее мы писали:"
+	);
+
+	public String clean(final RawNews news) {
+		if (news == null) {
+			return "";
+		}
+		return clean(news.getTitle(), news.getDescription(), news.getRawContent(), news.getSource());
+	}
+
 	public String clean(final String title, final String description, final String rawContent) {
+		return clean(title, description, rawContent, null);
+	}
+
+	private String clean(
+		final String title,
+		final String description,
+		final String rawContent,
+		final Media media
+	) {
 		final String normalizedRaw = normalize(rawContent);
 		if (!StringUtils.hasText(normalizedRaw)) {
 			return fallback(title, description);
 		}
 
-		String candidate = trimMetadataPrefix(normalizedRaw, normalize(title));
+		String candidate = stripInlineFragments(trimMetadataPrefix(normalizedRaw, normalize(title)));
+		candidate = trimHardStopTail(candidate, media);
 		final List<String> paragraphs = splitParagraphs(candidate);
 		final List<String> kept = new ArrayList<>();
 		final Set<String> seen = new HashSet<>();
@@ -101,7 +141,7 @@ public class NewsContentCleaner {
 			kept.add(candidate);
 		}
 
-		final String cleaned = normalize(String.join("\n\n", kept));
+		final String cleaned = trimHardStopTail(normalize(String.join("\n\n", kept)), media);
 		if (cleaned.length() >= MIN_CLEAN_CONTENT_LENGTH) {
 			return cleaned;
 		}
@@ -158,6 +198,9 @@ public class NewsContentCleaner {
 
 	private boolean shouldDiscard(final String paragraph, final String lower) {
 		if (containsAny(lower, DISCARD_MARKERS)) {
+			return true;
+		}
+		if (COMMENT_TIMESTAMP_PATTERN.matcher(paragraph).find()) {
 			return true;
 		}
 		if (URL_PATTERN.matcher(paragraph).results().count() >= 2) {
@@ -226,5 +269,50 @@ public class NewsContentCleaner {
 		return MULTI_SPACE.matcher(value.replace('\u00A0', ' ')).replaceAll(" ")
 			.replaceAll("\\n{3,}", "\n\n")
 			.strip();
+	}
+
+	private String stripInlineFragments(final String value) {
+		String candidate = normalize(value);
+		for (final String fragment : DISCARD_MARKERS) {
+			candidate = candidate.replace(fragment, " ");
+		}
+		return normalize(candidate);
+	}
+
+	private String trimHardStopTail(final String text, final Media media) {
+		if (!StringUtils.hasText(text)) {
+			return "";
+		}
+
+		final int scanFrom = 0;
+		int stop = text.length();
+		for (final String marker : INLINE_HARD_STOP_MARKERS) {
+			final int index = indexOfIgnoreCase(text, marker, scanFrom);
+			if (index >= 0 && index < stop) {
+				stop = index;
+			}
+		}
+
+		final var commentMatcher = COMMENT_TIMESTAMP_PATTERN.matcher(text);
+		if (commentMatcher.find(scanFrom) && commentMatcher.start() < stop) {
+			stop = commentMatcher.start();
+		}
+
+		if (media == Media.TUVAONLINE) {
+			final var tuvaDatesMatcher = TUVA_DATES_PATTERN.matcher(text);
+			if (tuvaDatesMatcher.find(scanFrom) && tuvaDatesMatcher.start() < stop) {
+				stop = tuvaDatesMatcher.start();
+			}
+		}
+
+		return normalize(text.substring(0, stop));
+	}
+
+	private int indexOfIgnoreCase(final String text, final String marker, final int fromIndex) {
+		if (!StringUtils.hasText(text) || !StringUtils.hasText(marker)) {
+			return -1;
+		}
+		return text.toLowerCase(Locale.ROOT)
+			.indexOf(marker.toLowerCase(Locale.ROOT), Math.max(0, fromIndex));
 	}
 }

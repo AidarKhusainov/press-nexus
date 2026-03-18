@@ -74,11 +74,11 @@ public class NewsPopulateContentService {
 	}
 
 	private Mono<RawNews> persist(final RawNews news) {
-		final String cleanContent = newsContentCleaner.clean(news.getTitle(), news.getDescription(), news.getRawContent());
+		final String cleanContent = newsContentCleaner.clean(news);
 		final var req = NewsUpsertRequest.builder()
 			.id(news.getId())
 			.media(news.getSource().name())
-			.externalId(null)
+			.externalId(news.getExternalId())
 			.url(news.getLink())
 			.title(news.getTitle())
 			.author(null)
@@ -95,6 +95,7 @@ public class NewsPopulateContentService {
 		return newsPersistenceService.upsert(req)
 			.map(saved -> RawNews.builder()
 				.id(saved.getId())
+				.externalId(news.getExternalId())
 				.link(news.getLink())
 				.title(news.getTitle())
 				.description(news.getDescription())
