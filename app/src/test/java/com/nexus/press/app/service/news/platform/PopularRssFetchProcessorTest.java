@@ -28,6 +28,7 @@ import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -186,6 +187,18 @@ class PopularRssFetchProcessorTest {
 		assertTrue(urls.stream().anyMatch(u -> u.contains("q=site%3Asib.fm")));
 		assertTrue(urls.stream().anyMatch(u -> u.contains("q=sib.fm")));
 		assertTrue(urls.stream().anyMatch(u -> u.contains("q=%22sib.fm%22")));
+	}
+
+	@Test
+	void springBeanFactoryCanInstantiateProcessor() {
+		try (var context = new AnnotationConfigApplicationContext()) {
+			context.registerBean(WebClientConfig.class, PopularRssFetchProcessorTest::webClientConfig);
+			context.registerBean(NewsPipelineProperties.class, PopularRssFetchProcessorTest::newsPipelineProperties);
+			context.register(PopularRssFetchProcessor.class);
+			context.refresh();
+
+			assertNotNull(context.getBean(PopularRssFetchProcessor.class));
+		}
 	}
 
 	@Test

@@ -19,6 +19,7 @@ import io.r2dbc.spi.Row;
 import io.r2dbc.spi.RowMetadata;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 @Slf4j
 @Service
@@ -27,6 +28,8 @@ public class NewsPersistenceService {
 
 	private static final String STATUS_PENDING = ProcessingStatus.PENDING.name();
 	private static final HexFormat HEX = HexFormat.of();
+	private static final Duration DUPLICATE_LOOKUP_BACKOFF = Duration.ofMillis(100);
+	private static final int DUPLICATE_LOOKUP_RETRIES = 4;
 
 	private final DatabaseClient db;
 
@@ -72,13 +75,15 @@ public class NewsPersistenceService {
 		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
 		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
 		final var fallbackFetchedAt = req.getFetchedAt() != null ? req.getFetchedAt() : OffsetDateTime.now();
+		final var urlInsertSql = baseInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE");
 
-		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, baseInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE"))
+		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, urlInsertSql)
 			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(
 				req,
 				id,
 				contentHash,
 				fallbackFetchedAt,
+				urlInsertSql,
 				baseInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE")
 			));
 	}
@@ -87,13 +92,15 @@ public class NewsPersistenceService {
 		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
 		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
 		final var fallbackFetchedAt = req.getFetchedAt() != null ? req.getFetchedAt() : OffsetDateTime.now();
+		final var urlInsertSql = discoveryInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE");
 
-		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, discoveryInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE"))
+		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, urlInsertSql)
 			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(
 				req,
 				id,
 				contentHash,
 				fallbackFetchedAt,
+				urlInsertSql,
 				discoveryInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE")
 			));
 	}
@@ -385,17 +392,28 @@ public class NewsPersistenceService {
 		final String id,
 		final String hash,
 		final OffsetDateTime fetchedAt,
+		final String urlRetrySql,
 		final String retrySql
 	) {
 		if (StringUtils.hasText(req.getExternalId())) {
 			log.warn("URL upsert conflict, retry by (media, external_id): url={} media={} extId={}",
 				req.getUrl(), req.getMedia(), req.getExternalId());
 			return bindAndExecute(req, id, hash, fetchedAt, retrySql)
-				.onErrorResume(DuplicateKeyException.class, ex -> findExistingByNaturalKeys(id, req.getUrl(), hash));
+				.onErrorResume(DuplicateKeyException.class, ex -> resolveExistingByNaturalKeysForDuplicate(id, req.getUrl(), hash)
+					.onErrorResume(IllegalStateException.class, missing -> {
+						log.warn("Не удалось найти существующую запись после duplicate conflict по external_id, повторяем upsert: id={} url={} extId={}",
+							id, req.getUrl(), req.getExternalId());
+						return bindAndExecute(req, id, hash, fetchedAt, retrySql);
+					}));
 		}
 
 		log.warn("URL upsert conflict without external_id, resolving existing row by id/url/hash: id={} url={}", id, req.getUrl());
-		return findExistingByNaturalKeys(id, req.getUrl(), hash);
+		return resolveExistingByNaturalKeysForDuplicate(id, req.getUrl(), hash)
+			.onErrorResume(IllegalStateException.class, ex -> {
+				log.warn("Не удалось найти существующую запись после duplicate conflict, повторяем URL upsert: id={} url={}",
+					id, req.getUrl());
+				return bindAndExecute(req, id, hash, fetchedAt, urlRetrySql);
+			});
 	}
 
 	private String baseInsertSql(final String conflictClause) {
@@ -461,7 +479,27 @@ public class NewsPersistenceService {
 			.one();
 	}
 
-	private Mono<NewsEntity> findExistingByNaturalKeys(final String id, final String url, final String contentHash) {
+	Mono<NewsEntity> resolveExistingByNaturalKeysForDuplicate(final String id, final String url, final String contentHash) {
+		return Mono.defer(() -> loadExistingByNaturalKeys(id, url, contentHash)
+				.switchIfEmpty(Mono.error(new ExistingDuplicateRowNotVisibleYetException())))
+			.retryWhen(
+				Retry.backoff(DUPLICATE_LOOKUP_RETRIES, DUPLICATE_LOOKUP_BACKOFF)
+					.filter(ExistingDuplicateRowNotVisibleYetException.class::isInstance)
+					.doBeforeRetry(retrySignal -> log.warn(
+						"Повторяем поиск существующей строки после duplicate conflict: attempt={} id={} url={}",
+						retrySignal.totalRetries() + 1,
+						id,
+						url
+					))
+					.onRetryExhaustedThrow((spec, retrySignal) -> retrySignal.failure())
+			)
+			.onErrorMap(
+				ExistingDuplicateRowNotVisibleYetException.class,
+				ex -> new IllegalStateException("Не удалось разрешить конфликт upsert: существующая запись не найдена", ex)
+			);
+	}
+
+	Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url, final String contentHash) {
 		final String sql = """
 			SELECT *
 			FROM news
@@ -480,9 +518,13 @@ public class NewsPersistenceService {
 			.bind("url", url)
 			.bind("contentHash", contentHash)
 			.map((row, md) -> mapNewsEntity(row))
-			.one()
-			.switchIfEmpty(Mono.error(new IllegalStateException(
-				"Не удалось разрешить конфликт upsert: существующая запись не найдена")));
+			.one();
+	}
+
+	private static final class ExistingDuplicateRowNotVisibleYetException extends IllegalStateException {
+		private ExistingDuplicateRowNotVisibleYetException() {
+			super("Existing duplicate row not visible yet");
+		}
 	}
 
 	private NewsEntity mapNewsEntity(final Row row) {

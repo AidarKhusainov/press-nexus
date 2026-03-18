@@ -40,6 +40,7 @@ import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -289,6 +290,7 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	private final Clock clock;
 	private final ConcurrentMap<FeedDefinition, FeedBackoffState> feedBackoffStates = new ConcurrentHashMap<>();
 
+	@Autowired
 	public PopularRssFetchProcessor(
 		final WebClientConfig webClientConfig,
 		final NewsPipelineProperties newsPipelineProperties

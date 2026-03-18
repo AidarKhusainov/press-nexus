@@ -1,6 +1,7 @@
 package com.nexus.press.app.config;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.netty.handler.timeout.ReadTimeoutException;
 import io.netty.handler.ssl.SslHandshakeTimeoutException;
 import java.net.URI;
 import java.time.Duration;
@@ -88,6 +89,25 @@ class WebClientConfigTest {
 		);
 		assertTrue(config.usesTls("https://api.telegram.org"));
 		assertFalse(config.usesTls("http://localhost:11434"));
+	}
+
+	@Test
+	void summarizeThrowableFallsBackToMeaningfulClassNameWhenMessageIsMissing() {
+		final var config = new WebClientConfig(
+			defaultProperties(),
+			retryPolicies(false),
+			APP_METRICS
+		);
+
+		final var ex = new WebClientRequestException(
+			ReadTimeoutException.INSTANCE,
+			HttpMethod.GET,
+			URI.create("https://example.com/feed"),
+			HttpHeaders.EMPTY
+		);
+
+		assertEquals("ReadTimeoutException", config.summarizeThrowable(ex));
+		assertEquals("handshake timed out", config.summarizeThrowable(new SslHandshakeTimeoutException("handshake timed out")));
 	}
 
 	private static HttpClientProperties defaultProperties() {

@@ -162,7 +162,7 @@ public class WebClientConfig {
 				.doOnError(throwable -> {
 					appMetrics.httpClientFailure(client, method, throwable, timerSample);
 					if (isExpectedExternalCallError(throwable)) {
-						log.warn("От платформы {} ошибка при запросе {}: {}", clientName, requestId, throwable.getMessage());
+						log.warn("От платформы {} ошибка при запросе {}: {}", clientName, requestId, summarizeThrowable(throwable));
 						log.debug("Стек ошибки запроса {} к платформе {}", requestId, clientName, throwable);
 						return;
 					}
@@ -239,6 +239,20 @@ public class WebClientConfig {
 	private boolean isExpectedExternalCallError(final Throwable throwable) {
 		return throwable instanceof WebClientRequestException
 			|| throwable instanceof WebClientResponseException;
+	}
+
+	String summarizeThrowable(final Throwable throwable) {
+		Throwable current = throwable;
+		String fallback = throwable == null ? "unknown" : throwable.getClass().getSimpleName();
+		while (current != null) {
+			final String message = current.getMessage();
+			if (message != null && !message.isBlank()) {
+				return message;
+			}
+			fallback = current.getClass().getSimpleName();
+			current = current.getCause();
+		}
+		return fallback;
 	}
 
 	private boolean hasRetryableTransportCause(final Throwable throwable) {
