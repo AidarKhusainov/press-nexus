@@ -41,6 +41,7 @@
 - Retries must be bounded and observable.
 - Transport-level request failures and timeouts from external HTTP clients must remain retryable unless a per-client policy explicitly disables them.
 - Any external dependency failure should degrade gracefully, not crash the whole app.
+- Flaky RSS sources must use bounded source-level backoff so repeated upstream failures do not hammer the same origin every scheduler tick while the last error remains observable for follow-up remediation.
 - Stage workers must use claim/lease semantics so parallel workers do not process the same item concurrently.
 - `FAILED` items must not silently re-enter the hot backlog without an explicit recovery policy.
 

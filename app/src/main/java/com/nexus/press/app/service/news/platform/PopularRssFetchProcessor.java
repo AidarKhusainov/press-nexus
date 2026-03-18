@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -25,6 +26,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import com.nexus.press.app.config.WebClientConfig;
@@ -275,16 +281,29 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	private static final DateTimeFormatter SPACE_OFFSET_NO_COLON =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssZ", Locale.ENGLISH);
 	private static final Pattern ZERO_PADDED_YEAR_PATTERN = Pattern.compile("^00(\\d{2})(?=[-/.T ])");
+	private static final Duration FAILURE_BACKOFF_BASE = Duration.ofMinutes(30);
+	private static final Duration FAILURE_BACKOFF_MAX = Duration.ofHours(6);
 
 	private final WebClient webClient;
 	private final NewsPipelineProperties newsPipelineProperties;
+	private final Clock clock;
+	private final ConcurrentMap<FeedDefinition, FeedBackoffState> feedBackoffStates = new ConcurrentHashMap<>();
 
 	public PopularRssFetchProcessor(
 		final WebClientConfig webClientConfig,
 		final NewsPipelineProperties newsPipelineProperties
 	) {
+		this(webClientConfig, newsPipelineProperties, Clock.systemUTC());
+	}
+
+	PopularRssFetchProcessor(
+		final WebClientConfig webClientConfig,
+		final NewsPipelineProperties newsPipelineProperties,
+		final Clock clock
+	) {
 		this.webClient = webClientConfig.getWebClient(HttpClientName.NEWS);
 		this.newsPipelineProperties = newsPipelineProperties;
+		this.clock = clock;
 	}
 
 	@Override
@@ -298,28 +317,126 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	}
 
 	Flux<RawNews> fetchFeed(final FeedDefinition feed) {
+		if (shouldBackOff(feed)) {
+			return Flux.empty();
+		}
+
 		log.info("Получение RSS {}: {}", feed.media(), feed.feedUrl());
 		final var candidates = buildAllFeedUrlCandidates(feed);
+		final var failedCandidates = new AtomicInteger();
+		final var hadSuccessfulResponse = new AtomicBoolean(false);
+		final var lastFailure = new AtomicReference<String>();
 		return Flux.fromIterable(candidates)
 			.concatMap(url -> fetchFeedXmlForCandidate(feed, url)
 				.flatMap(xml -> Mono.fromCallable(() -> parseFeed(xml, feed))
 					.subscribeOn(Schedulers.boundedElastic())
-					.map(items -> new CandidateFetchResult(url, items)))
+					.map(items -> {
+						hadSuccessfulResponse.set(true);
+						return new CandidateFetchResult(url, items);
+					}))
 				.onErrorResume(ex -> {
-					log.warn("Не удалось получить/распарсить RSS {} через {}: {}", feed.media(), url, ex.getMessage());
+					failedCandidates.incrementAndGet();
+					lastFailure.set(summarizeFailure(ex));
+					log.warn("Не удалось получить/распарсить RSS {} через {}: {}", feed.media(), url, summarizeFailure(ex));
 					return Mono.empty();
 				}))
 			.filter(result -> !result.items().isEmpty())
 			.next()
 			.flatMapMany(result -> {
+				clearBackoff(feed);
 				log.info("RSS {} успешно прочитан через {} ({} новостей)",
 					feed.media(), result.url(), result.items().size());
 				return Flux.fromIterable(result.items());
 			})
 			.switchIfEmpty(Flux.defer(() -> {
+				if (!hadSuccessfulResponse.get() && failedCandidates.get() > 0) {
+					recordFailure(feed, failedCandidates.get(), lastFailure.get());
+				}
 				log.warn("Не удалось получить непустой RSS ни по одному URL для {}: {}", feed.media(), candidates);
 				return Flux.empty();
 			}));
+	}
+
+	private boolean shouldBackOff(final FeedDefinition feed) {
+		final FeedBackoffState current = feedBackoffStates.get(feed);
+		if (current == null) {
+			return false;
+		}
+
+		final Instant now = clock.instant();
+		if (!current.nextAttemptAt().isAfter(now)) {
+			return false;
+		}
+
+		if (!current.skipLogged()) {
+			feedBackoffStates.computeIfPresent(feed, (ignored, state) -> {
+				if (state.skipLogged() || !state.nextAttemptAt().isAfter(now)) {
+					return state;
+				}
+				log.warn(
+					"Пропускаем RSS {} из-за source backoff до {}: failures={} lastError={}",
+					feed.media(),
+					state.nextAttemptAt(),
+					state.consecutiveFailures(),
+					state.lastFailure()
+				);
+				return state.withSkipLogged(true);
+			});
+		}
+		return true;
+	}
+
+	private void recordFailure(final FeedDefinition feed, final int failedCandidates, final String lastFailure) {
+		final FeedBackoffState updated = feedBackoffStates.compute(feed, (ignored, current) -> {
+			final int consecutiveFailures = current == null ? 1 : current.consecutiveFailures() + 1;
+			return new FeedBackoffState(
+				consecutiveFailures,
+				clock.instant().plus(computeBackoff(consecutiveFailures)),
+				lastFailure == null ? "unknown" : lastFailure,
+				false
+			);
+		});
+
+		log.warn(
+			"Включаем source backoff для RSS {}: failures={} candidateFailures={} retryAt={} lastError={}",
+			feed.media(),
+			updated.consecutiveFailures(),
+			failedCandidates,
+			updated.nextAttemptAt(),
+			updated.lastFailure()
+		);
+	}
+
+	private void clearBackoff(final FeedDefinition feed) {
+		final FeedBackoffState previous = feedBackoffStates.remove(feed);
+		if (previous != null) {
+			log.info(
+				"Снимаем source backoff для RSS {} после успешного ответа: previousFailures={} lastError={}",
+				feed.media(),
+				previous.consecutiveFailures(),
+				previous.lastFailure()
+			);
+		}
+	}
+
+	private Duration computeBackoff(final int consecutiveFailures) {
+		long cooldownMinutes = FAILURE_BACKOFF_BASE.toMinutes();
+		for (int attempt = 1; attempt < consecutiveFailures; attempt++) {
+			cooldownMinutes = Math.min(FAILURE_BACKOFF_MAX.toMinutes(), cooldownMinutes * 2L);
+		}
+		return Duration.ofMinutes(cooldownMinutes);
+	}
+
+	private String summarizeFailure(final Throwable throwable) {
+		Throwable current = throwable;
+		while (current.getCause() != null) {
+			current = current.getCause();
+		}
+		final String message = current.getMessage();
+		if (!StringUtils.hasText(message)) {
+			return current.getClass().getSimpleName();
+		}
+		return current.getClass().getSimpleName() + ": " + message;
 	}
 
 	private Mono<String> fetchFeedXmlForCandidate(final FeedDefinition feed, final String feedUrl) {
@@ -743,6 +860,18 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	}
 
 	private record CandidateFetchResult(String url, List<RawNews> items) {}
+
+	private record FeedBackoffState(
+		int consecutiveFailures,
+		Instant nextAttemptAt,
+		String lastFailure,
+		boolean skipLogged
+	) {
+
+		private FeedBackoffState withSkipLogged(final boolean skipLogged) {
+			return new FeedBackoffState(consecutiveFailures, nextAttemptAt, lastFailure, skipLogged);
+		}
+	}
 
 	public record FeedDefinition(Media media, String feedUrl, String language) {}
 }

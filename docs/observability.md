@@ -55,5 +55,6 @@ Any new critical flow must include at least one metric and one actionable log ev
   - external HTTP metrics by provider, to confirm whether traffic shifted away from a throttled or degraded vendor
 - Backlog dashboards and alerts should distinguish `pending`/`in_progress` from `failed`; only active backlog should drive discovery throttling.
 - Discovery skip logs/metrics should be interpreted against active ingest backlog first; `totalBacklog` is diagnostic context and must not be treated as the throttle input by itself.
+- RSS source backoff must log the source, last upstream error, and next retry time so regional/network blocks can be diagnosed without re-enabling hot-loop retries.
 - Readiness must reflect app/runtime dependencies; backlog is an alert/SLO signal, not a readiness gate.
 - Similarity threshold changes must be validated with cluster-size distribution checks so representative-news selection does not collapse into giant connected components.

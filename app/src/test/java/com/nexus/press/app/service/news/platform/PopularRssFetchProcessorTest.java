@@ -1,6 +1,7 @@
 package com.nexus.press.app.service.news.platform;
 
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -9,10 +10,15 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.nexus.press.app.config.WebClientConfig;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
@@ -22,6 +28,14 @@ import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.ExchangeFunction;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -231,6 +245,66 @@ class PopularRssFetchProcessorTest {
 		}
 	}
 
+	@Test
+	void fetchFeedUsesSourceBackoffBetweenFailureAndNextRetry() throws Exception {
+		final var requests = new AtomicInteger();
+		final var failRequests = new AtomicBoolean(true);
+		final var clock = new MutableClock(Instant.parse("2026-03-18T05:35:00Z"));
+		final var processor = new PopularRssFetchProcessor(
+			stubWebClientConfig(request -> {
+				requests.incrementAndGet();
+				if (failRequests.get()) {
+					return Mono.error(new WebClientRequestException(
+						new java.io.IOException("network blocked"),
+						HttpMethod.GET,
+						request.url(),
+						HttpHeaders.EMPTY
+					));
+				}
+				return Mono.just(ClientResponse.create(HttpStatus.OK)
+					.header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_XML_VALUE)
+					.body("""
+						<rss version="2.0">
+						  <channel>
+						    <item>
+						      <guid>ok-1</guid>
+						      <title>Recovered</title>
+						      <link>https://example.com/recovered</link>
+						      <description>ok</description>
+						      <pubDate>Mon, 06 Jan 2025 10:15:30 +0000</pubDate>
+						    </item>
+						  </channel>
+						</rss>
+						""")
+					.build());
+			}),
+			newsPipelineProperties(),
+			clock
+		);
+		final var feed = newFeedDefinition(Media.FOXNEWS, "https://news.google.invalid/rss.xml", "en");
+
+		final var firstAttempt = fetchFeed(processor, feed).collectList().block(Duration.ofSeconds(5));
+		final int requestsAfterFailure = requests.get();
+		final var skippedAttempt = fetchFeed(processor, feed).collectList().block(Duration.ofSeconds(5));
+
+		assertNotNull(firstAttempt);
+		assertTrue(firstAttempt.isEmpty());
+		assertNotNull(skippedAttempt);
+		assertTrue(skippedAttempt.isEmpty());
+		assertTrue(requestsAfterFailure > 0);
+		assertEquals(requestsAfterFailure, requests.get());
+
+		clock.advance(Duration.ofMinutes(31));
+		failRequests.set(false);
+
+		final var recovered = fetchFeed(processor, feed).collectList().block(Duration.ofSeconds(5));
+
+		assertNotNull(recovered);
+		assertEquals(1, recovered.size());
+		assertTrue(requests.get() > requestsAfterFailure);
+		assertEquals("https://example.com/recovered", recovered.getFirst().getId());
+	}
+
 	private static WebClientConfig webClientConfig() {
 		final var cfg = new HttpClientProperties.ClientConfig(
 			"http://localhost",
@@ -239,6 +313,23 @@ class PopularRssFetchProcessorTest {
 		);
 		final var props = new HttpClientProperties(Map.of(HttpClientName.NEWS, cfg));
 		return new WebClientConfig(props, APP_METRICS);
+	}
+
+	private static WebClientConfig stubWebClientConfig(final ExchangeFunction exchangeFunction) {
+		final var cfg = new HttpClientProperties.ClientConfig(
+			"https://provider",
+			new HttpClientProperties.Timeout(Duration.ofSeconds(2), Duration.ofSeconds(2)),
+			new HttpClientProperties.Retry(1, Duration.ofMillis(10), 0.0)
+		);
+		return new WebClientConfig(new HttpClientProperties(Map.of(HttpClientName.NEWS, cfg)), APP_METRICS) {
+			@Override
+			public WebClient getWebClient(final HttpClientName clientName) {
+				return WebClient.builder()
+					.baseUrl("https://provider")
+					.exchangeFunction(exchangeFunction)
+					.build();
+			}
+		};
 	}
 
 	private static NewsPipelineProperties newsPipelineProperties() {
@@ -298,5 +389,33 @@ class PopularRssFetchProcessorTest {
 		final Constructor<?> feedConstructor = feedClass.getDeclaredConstructor(Media.class, String.class, String.class);
 		feedConstructor.setAccessible(true);
 		return feedConstructor.newInstance(media, feedUrl, language);
+	}
+
+	private static final class MutableClock extends Clock {
+
+		private Instant current;
+
+		private MutableClock(final Instant current) {
+			this.current = current;
+		}
+
+		@Override
+		public ZoneOffset getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(final java.time.ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			return current;
+		}
+
+		private void advance(final Duration duration) {
+			current = current.plus(duration);
+		}
 	}
 }
