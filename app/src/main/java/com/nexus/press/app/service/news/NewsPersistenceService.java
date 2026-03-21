@@ -1,11 +1,7 @@
 package com.nexus.press.app.service.news;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.HexFormat;
 import com.nexus.press.app.repository.entity.NewsEntity;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
@@ -27,7 +23,6 @@ import reactor.util.retry.Retry;
 public class NewsPersistenceService {
 
 	private static final String STATUS_PENDING = ProcessingStatus.PENDING.name();
-	private static final HexFormat HEX = HexFormat.of();
 	private static final Duration DUPLICATE_LOOKUP_BACKOFF = Duration.ofMillis(100);
 	private static final int DUPLICATE_LOOKUP_RETRIES = 4;
 
@@ -44,12 +39,6 @@ public class NewsPersistenceService {
 		long summaryInProgress,
 		long summaryFailed
 	) {
-
-		public long discoveryBlockingOutstanding() {
-			return contentPending + contentInProgress
-				+ embeddingPending + embeddingInProgress;
-		}
-
 		public long totalOutstanding() {
 			return contentPending + contentInProgress
 				+ embeddingPending + embeddingInProgress
@@ -72,37 +61,24 @@ public class NewsPersistenceService {
 	}
 
 	public Mono<NewsEntity> upsert(final NewsUpsertRequest req) {
-		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
 		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
 		final var fallbackFetchedAt = req.getFetchedAt() != null ? req.getFetchedAt() : OffsetDateTime.now();
 		final var urlInsertSql = baseInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE");
 
-		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, urlInsertSql)
+		return upsertByUrl(req, id, fallbackFetchedAt, urlInsertSql)
 			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(
 				req,
 				id,
-				contentHash,
 				fallbackFetchedAt,
 				urlInsertSql,
 				baseInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE")
 			));
 	}
 
-	public Mono<NewsEntity> upsertDiscovered(final NewsUpsertRequest req) {
-		final var contentHash = computeHash(req.getContentClean() != null ? req.getContentClean() : req.getContentRaw());
+	public Mono<NewsEntity> saveDiscoveredIfAbsent(final NewsUpsertRequest req) {
 		final var id = req.getId() != null ? req.getId() : java.util.UUID.randomUUID().toString();
 		final var fallbackFetchedAt = req.getFetchedAt() != null ? req.getFetchedAt() : OffsetDateTime.now();
-		final var urlInsertSql = discoveryInsertSql("ON CONFLICT ON CONSTRAINT news_url_uq DO UPDATE");
-
-		return upsertByUrl(req, id, contentHash, fallbackFetchedAt, urlInsertSql)
-			.onErrorResume(DuplicateKeyException.class, e -> resolveDuplicateUpsert(
-				req,
-				id,
-				contentHash,
-				fallbackFetchedAt,
-				urlInsertSql,
-				discoveryInsertSql("ON CONFLICT (media, external_id) WHERE external_id IS NOT NULL DO UPDATE")
-			));
+		return bindAndExecute(req, id, fallbackFetchedAt, discoveryInsertIfAbsentSql());
 	}
 
 	public Mono<Void> updateStatusContent(final String id, final ProcessingStatus status) {
@@ -174,7 +150,7 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.content_hash,
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean,
 			          n.media, n.published_at, n.fetched_at, n.language
 			""";
 
@@ -219,7 +195,7 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.content_hash,
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean,
 			          n.media, n.published_at, n.fetched_at, n.language
 			""";
 
@@ -264,7 +240,7 @@ public class NewsPersistenceService {
 			    updated_at = now()
 			FROM claimed
 			WHERE n.id = claimed.id
-			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean, n.content_hash,
+			RETURNING n.id, n.url, n.title, n.content_raw, n.content_clean,
 			          n.media, n.published_at, n.fetched_at, n.language
 			""";
 
@@ -276,19 +252,17 @@ public class NewsPersistenceService {
 			.all();
 	}
 
-	public Mono<CachedSummary> findReusableSummary(final String newsId, final String contentHash, final String lang) {
-		if (!StringUtils.hasText(lang) || !StringUtils.hasText(newsId) && !StringUtils.hasText(contentHash)) {
+	public Mono<CachedSummary> findReusableSummary(final String newsId, final String lang) {
+		if (!StringUtils.hasText(lang) || !StringUtils.hasText(newsId)) {
 			return Mono.empty();
 		}
 
 		final String sql = """
 			SELECT s.model, s.lang, s.summary
 			FROM news_summary s
-			JOIN news n ON n.id = s.news_id
-			WHERE (s.news_id = :newsId OR n.content_hash = :contentHash)
+			WHERE s.news_id = :newsId
 			  AND s.lang = :lang
 			ORDER BY
-				CASE WHEN s.news_id = :newsId THEN 3 ELSE 0 END DESC,
 				s.created_at DESC
 			LIMIT 1
 			""";
@@ -296,7 +270,6 @@ public class NewsPersistenceService {
 		var spec = db.sql(sql)
 			.bind("lang", lang);
 		spec = bindOrNull(spec, "newsId", newsId, String.class);
-		spec = bindOrNull(spec, "contentHash", contentHash, String.class);
 		return spec.map((row, md) -> new CachedSummary(
 				row.get("model", String.class),
 				row.get("lang", String.class),
@@ -380,17 +353,15 @@ public class NewsPersistenceService {
 	private Mono<NewsEntity> upsertByUrl(
 		final NewsUpsertRequest req,
 		final String id,
-		final String hash,
 		final OffsetDateTime fetchedAt,
 		final String sql
 	) {
-		return bindAndExecute(req, id, hash, fetchedAt, sql);
+		return bindAndExecute(req, id, fetchedAt, sql);
 	}
 
 	private Mono<NewsEntity> resolveDuplicateUpsert(
 		final NewsUpsertRequest req,
 		final String id,
-		final String hash,
 		final OffsetDateTime fetchedAt,
 		final String urlRetrySql,
 		final String retrySql
@@ -398,30 +369,32 @@ public class NewsPersistenceService {
 		if (StringUtils.hasText(req.getExternalId())) {
 			log.warn("URL upsert conflict, retry by (media, external_id): url={} media={} extId={}",
 				req.getUrl(), req.getMedia(), req.getExternalId());
-			return bindAndExecute(req, id, hash, fetchedAt, retrySql)
-				.onErrorResume(DuplicateKeyException.class, ex -> resolveExistingByNaturalKeysForDuplicate(id, req.getUrl(), hash)
+			return bindAndExecute(req, id, fetchedAt, retrySql)
+				.onErrorResume(DuplicateKeyException.class, ex -> resolveExistingByNaturalKeysForDuplicate(id, req.getUrl())
 					.onErrorResume(IllegalStateException.class, missing -> {
 						log.warn("Не удалось найти существующую запись после duplicate conflict по external_id, повторяем upsert: id={} url={} extId={}",
 							id, req.getUrl(), req.getExternalId());
-						return bindAndExecute(req, id, hash, fetchedAt, retrySql);
+						return bindAndExecute(req, id, fetchedAt, retrySql);
 					}));
 		}
 
-		log.warn("URL upsert conflict without external_id, resolving existing row by id/url/hash: id={} url={}", id, req.getUrl());
-		return resolveExistingByNaturalKeysForDuplicate(id, req.getUrl(), hash)
+		log.warn("URL upsert conflict without external_id, resolving existing row by id/url: id={} url={}", id, req.getUrl());
+		return resolveExistingByNaturalKeysForDuplicate(id, req.getUrl())
 			.onErrorResume(IllegalStateException.class, ex -> {
 				log.warn("Не удалось найти существующую запись после duplicate conflict, повторяем URL upsert: id={} url={}",
 					id, req.getUrl());
-				return bindAndExecute(req, id, hash, fetchedAt, urlRetrySql);
+				return bindAndExecute(req, id, fetchedAt, urlRetrySql);
 			});
 	}
 
 	private String baseInsertSql(final String conflictClause) {
 		return "INSERT INTO news (id, media, external_id, url, title, author, language, published_at, fetched_at, " +
-			"content_raw, content_clean, content_hash, status_content, status_embedding, status_summary) " +
+			"content_raw, content_clean, status_content, status_embedding, status_summary) " +
 			"VALUES (:id, :media, :externalId, :url, :title, :author, :language, :publishedAt, :fetchedAt, " +
-			":contentRaw, :contentClean, :contentHash, :statusContent, :statusEmbedding, :statusSummary) " +
+			":contentRaw, :contentClean, :statusContent, :statusEmbedding, :statusSummary) " +
 			conflictClause + " SET " +
+			"external_id = COALESCE(EXCLUDED.external_id, news.external_id), " +
+			"url = EXCLUDED.url, " +
 			"title = EXCLUDED.title, " +
 			"author = COALESCE(EXCLUDED.author, news.author), " +
 			"language = COALESCE(EXCLUDED.language, news.language), " +
@@ -429,7 +402,6 @@ public class NewsPersistenceService {
 			"fetched_at = EXCLUDED.fetched_at, " +
 			"content_raw = COALESCE(EXCLUDED.content_raw, news.content_raw), " +
 			"content_clean = COALESCE(EXCLUDED.content_clean, news.content_clean), " +
-			"content_hash = EXCLUDED.content_hash, " +
 			"status_content = COALESCE(EXCLUDED.status_content, news.status_content), " +
 			"status_embedding = COALESCE(EXCLUDED.status_embedding, news.status_embedding), " +
 			"status_summary = COALESCE(EXCLUDED.status_summary, news.status_summary), " +
@@ -439,10 +411,12 @@ public class NewsPersistenceService {
 
 	private String discoveryInsertSql(final String conflictClause) {
 		return "INSERT INTO news (id, media, external_id, url, title, author, language, published_at, fetched_at, " +
-			"content_raw, content_clean, content_hash, status_content, status_embedding, status_summary) " +
+			"content_raw, content_clean, status_content, status_embedding, status_summary) " +
 			"VALUES (:id, :media, :externalId, :url, :title, :author, :language, :publishedAt, :fetchedAt, " +
-			":contentRaw, :contentClean, :contentHash, :statusContent, :statusEmbedding, :statusSummary) " +
+			":contentRaw, :contentClean, :statusContent, :statusEmbedding, :statusSummary) " +
 			conflictClause + " SET " +
+			"external_id = COALESCE(EXCLUDED.external_id, news.external_id), " +
+			"url = EXCLUDED.url, " +
 			"title = EXCLUDED.title, " +
 			"author = COALESCE(EXCLUDED.author, news.author), " +
 			"language = COALESCE(EXCLUDED.language, news.language), " +
@@ -452,7 +426,16 @@ public class NewsPersistenceService {
 			"RETURNING *";
 	}
 
-	private Mono<NewsEntity> bindAndExecute(final NewsUpsertRequest req, final String id, final String hash, final OffsetDateTime fetchedAt, final String sql) {
+	private String discoveryInsertIfAbsentSql() {
+		return "INSERT INTO news (id, media, external_id, url, title, author, language, published_at, fetched_at, " +
+			"content_raw, content_clean, status_content, status_embedding, status_summary) " +
+			"VALUES (:id, :media, :externalId, :url, :title, :author, :language, :publishedAt, :fetchedAt, " +
+			":contentRaw, :contentClean, :statusContent, :statusEmbedding, :statusSummary) " +
+			"ON CONFLICT DO NOTHING " +
+			"RETURNING *";
+	}
+
+	private Mono<NewsEntity> bindAndExecute(final NewsUpsertRequest req, final String id, final OffsetDateTime fetchedAt, final String sql) {
 		final var statusContent = req.getStatusContent() != null ? req.getStatusContent().name() : STATUS_PENDING;
 		final var statusEmbedding = req.getStatusEmbedding() != null ? req.getStatusEmbedding().name() : STATUS_PENDING;
 		final var statusSummary = req.getStatusSummary() != null ? req.getStatusSummary().name() : STATUS_PENDING;
@@ -463,7 +446,6 @@ public class NewsPersistenceService {
 			.bind("url", req.getUrl())
 			.bind("title", req.getTitle())
 			.bind("fetchedAt", fetchedAt)
-			.bind("contentHash", hash)
 			.bind("statusContent", statusContent)
 			.bind("statusEmbedding", statusEmbedding)
 			.bind("statusSummary", statusSummary);
@@ -479,8 +461,8 @@ public class NewsPersistenceService {
 			.one();
 	}
 
-	Mono<NewsEntity> resolveExistingByNaturalKeysForDuplicate(final String id, final String url, final String contentHash) {
-		return Mono.defer(() -> loadExistingByNaturalKeys(id, url, contentHash)
+	Mono<NewsEntity> resolveExistingByNaturalKeysForDuplicate(final String id, final String url) {
+		return Mono.defer(() -> loadExistingByNaturalKeys(id, url)
 				.switchIfEmpty(Mono.error(new ExistingDuplicateRowNotVisibleYetException())))
 			.retryWhen(
 				Retry.backoff(DUPLICATE_LOOKUP_RETRIES, DUPLICATE_LOOKUP_BACKOFF)
@@ -499,24 +481,21 @@ public class NewsPersistenceService {
 			);
 	}
 
-	Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url, final String contentHash) {
+	Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url) {
 		final String sql = """
 			SELECT *
 			FROM news
 			WHERE id = :id
 			   OR url = :url
-			   OR content_hash = :contentHash
 			ORDER BY
 				CASE WHEN id = :id THEN 3 ELSE 0 END +
-				CASE WHEN url = :url THEN 2 ELSE 0 END +
-				CASE WHEN content_hash = :contentHash THEN 1 ELSE 0 END DESC
+				CASE WHEN url = :url THEN 2 ELSE 0 END DESC
 			LIMIT 1
 			""";
 
 		return db.sql(sql)
 			.bind("id", id)
 			.bind("url", url)
-			.bind("contentHash", contentHash)
 			.map((row, md) -> mapNewsEntity(row))
 			.one();
 	}
@@ -540,7 +519,6 @@ public class NewsPersistenceService {
 			.fetchedAt(row.get("fetched_at", OffsetDateTime.class))
 			.contentRaw(row.get("content_raw", String.class))
 			.contentClean(row.get("content_clean", String.class))
-			.contentHash(row.get("content_hash", String.class))
 			.statusContent(row.get("status_content", String.class))
 			.statusEmbedding(row.get("status_embedding", String.class))
 			.statusSummary(row.get("status_summary", String.class))
@@ -556,18 +534,6 @@ public class NewsPersistenceService {
 		final Class<T> type
 	) {
 		return value != null ? spec.bind(name, value) : spec.bindNull(name, type);
-	}
-
-	private String computeHash(final String content) {
-		if (content == null || content.isBlank()) {
-			throw new IllegalArgumentException("Для сохранения новости требуется непустой контент");
-		}
-		try {
-			final MessageDigest md = MessageDigest.getInstance("SHA-256");
-			return HEX.formatHex(md.digest(content.getBytes(StandardCharsets.UTF_8)));
-		} catch (final NoSuchAlgorithmException e) {
-			throw new IllegalStateException("SHA-256 not available", e);
-		}
 	}
 
 	private long safeLeaseSeconds(final Duration claimTimeout) {
@@ -617,7 +583,6 @@ public class NewsPersistenceService {
 			.source(toMedia(mediaValue))
 			.publishedDate(row.get("published_at", OffsetDateTime.class))
 			.fetchedDate(row.get("fetched_at", OffsetDateTime.class))
-			.contentHash(row.get("content_hash", String.class))
 			.language(row.get("language", String.class))
 			.build();
 	}

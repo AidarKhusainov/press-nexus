@@ -27,7 +27,7 @@ class NewsSummaryPlannerTest {
 		void planForRepresentativeReusesCachedSummaryBeforeAnyRanking() {
 		final NewsPersistenceService persistence = mock(NewsPersistenceService.class);
 		final NewsClusteringService clusteringService = mock(NewsClusteringService.class);
-		when(persistence.findReusableSummary(any(), any(), any()))
+		when(persistence.findReusableSummary(any(), any()))
 			.thenReturn(Mono.just(new NewsPersistenceService.CachedSummary("GEMINI:model", "ru", "Cached summary")));
 
 		final var planner = new NewsSummaryPlanner(
@@ -53,7 +53,7 @@ class NewsSummaryPlannerTest {
 	@Test
 	void planForRepresentativeDefersImmatureAutoCluster() {
 		final NewsPersistenceService persistence = mock(NewsPersistenceService.class);
-		when(persistence.findReusableSummary(any(), any(), any())).thenReturn(Mono.empty());
+		when(persistence.findReusableSummary(any(), any())).thenReturn(Mono.empty());
 
 		final var planner = new NewsSummaryPlanner(
 			persistence,
@@ -77,7 +77,7 @@ class NewsSummaryPlannerTest {
 	void planForRepresentativeUsesFallbackWhenClusterIsOutsideDailyTopN() {
 		final NewsPersistenceService persistence = mock(NewsPersistenceService.class);
 		final NewsClusteringService clusteringService = mock(NewsClusteringService.class);
-		when(persistence.findReusableSummary(any(), any(), any())).thenReturn(Mono.empty());
+		when(persistence.findReusableSummary(any(), any())).thenReturn(Mono.empty());
 		when(persistence.loadSummaryPriorityCandidates(any()))
 			.thenReturn(Flux.just(
 				new NewsPersistenceService.SummaryPriorityCandidate(
@@ -119,7 +119,7 @@ class NewsSummaryPlannerTest {
 	void planForRepresentativeStopsUsingProviderWhenBudgetIsExhausted() {
 		final NewsPersistenceService persistence = mock(NewsPersistenceService.class);
 		final NewsClusteringService clusteringService = mock(NewsClusteringService.class);
-		when(persistence.findReusableSummary(any(), any(), any())).thenReturn(Mono.empty());
+		when(persistence.findReusableSummary(any(), any())).thenReturn(Mono.empty());
 		when(persistence.loadSummaryPriorityCandidates(any()))
 			.thenReturn(Flux.just(new NewsPersistenceService.SummaryPriorityCandidate(
 				"rep-3",
@@ -178,7 +178,6 @@ class NewsSummaryPlannerTest {
 			.source(Media.BBC)
 			.publishedDate(publishedAt)
 			.fetchedDate(publishedAt.plusMinutes(1))
-			.contentHash("hash-" + id)
 			.language("ru")
 			.build();
 	}

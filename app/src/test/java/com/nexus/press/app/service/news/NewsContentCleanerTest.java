@@ -107,4 +107,40 @@ class NewsContentCleanerTest {
 		assertTrue(cleaned.contains("Еще один магазин поставил"));
 		assertFalse(cleaned.contains("телеграм-канале"));
 	}
+
+	@Test
+	void cleanDecodesEscapedHtmlAndStopsAtReadMoreTail() {
+		final String title = "Чем заняться в Москве и Санкт-Петербурге";
+		final String raw = """
+			&lt;h2&gt;&lt;span&gt;Чем заняться в Москве и Санкт-Петербурге&lt;/span&gt;&lt;/h2&gt;
+			&lt;p&gt;В Москве стартует выставка современной фотографии с редкими архивными работами и открытой дискуссией кураторов.&lt;/p&gt;
+			&lt;p&gt;В Санкт-Петербурге пройдет концерт камерной музыки и паблик-ток о новых релизах этой недели.&lt;/p&gt;
+			&lt;p&gt;Читайте также&lt;/p&gt;
+			&lt;p&gt;Посторонний хвост с виджетами и ссылками.&lt;/p&gt;
+			""";
+
+		final String cleaned = cleaner.clean(title, "Короткое описание из RSS", raw);
+
+		assertTrue(cleaned.contains("В Москве стартует выставка современной фотографии"));
+		assertTrue(cleaned.contains("В Санкт-Петербурге пройдет концерт камерной музыки"));
+		assertFalse(cleaned.contains("&lt;"));
+		assertFalse(cleaned.contains("Читайте также"));
+		assertFalse(cleaned.contains("Посторонний хвост"));
+	}
+
+	@Test
+	void cleanFallbackDoesNotDuplicateTitleWhenDescriptionRepeatsIt() {
+		final String title = "Фицо жестко прокомментировал нежелание Киева допустить комиссию к \"Дружбе\"";
+		final String raw = """
+			Фото 7225
+
+			14619
+
+			23289
+			""";
+
+		final String cleaned = cleaner.clean(title, "Фицо жестко прокомментировал нежелание Киева допустить комиссию к \"Дружбе\"", raw);
+
+		assertEquals(title, cleaned);
+	}
 }

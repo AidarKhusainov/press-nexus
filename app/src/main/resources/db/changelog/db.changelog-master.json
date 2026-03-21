@@ -25,7 +25,6 @@
               { "column": { "name": "fetched_at", "type": "timestamp with time zone", "defaultValueComputed": "now()", "constraints": { "nullable": false }, "remarks": "Дата/время получения системой" }},
               { "column": { "name": "content_raw", "type": "text", "remarks": "Исходный контент (сырые данные)" }},
               { "column": { "name": "content_clean", "type": "text", "remarks": "Очищенный/нормализованный контент" }},
-              { "column": { "name": "content_hash", "type": "text", "constraints": { "nullable": false, "unique": true }, "remarks": "Хеш контента для дедупликации" }},
               { "column": { "name": "status_content", "type": "text", "defaultValue": "PENDING", "constraints": { "nullable": false }, "remarks": "Статус получения/нормализации контента (PENDING/IN_PROGRESS/DONE/FAILED)" }},
               { "column": { "name": "status_embedding", "type": "text", "defaultValue": "PENDING", "constraints": { "nullable": false }, "remarks": "Статус расчёта эмбеддинга" }},
               { "column": { "name": "status_summary", "type": "text", "defaultValue": "PENDING", "constraints": { "nullable": false }, "remarks": "Статус суммаризации" }},
@@ -388,6 +387,20 @@
             "sql": {
               "comment": "Stage-specific lease timestamps prevent discovery updates from extending worker claims",
               "sql": "ALTER TABLE news ADD COLUMN IF NOT EXISTS content_claimed_at timestamp with time zone; ALTER TABLE news ADD COLUMN IF NOT EXISTS embedding_claimed_at timestamp with time zone; ALTER TABLE news ADD COLUMN IF NOT EXISTS summary_claimed_at timestamp with time zone;"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "changeSet": {
+        "id": "005-news-drop-content-hash",
+        "author": "Khusainov Aidar",
+        "changes": [
+          {
+            "sql": {
+              "comment": "Drop obsolete content_hash column and related objects; news identity is determined by source keys instead",
+              "sql": "ALTER TABLE news DROP CONSTRAINT IF EXISTS news_content_hash_key; DROP INDEX IF EXISTS news_content_hash_idx; ALTER TABLE news DROP COLUMN IF EXISTS content_hash;"
             }
           }
         ]

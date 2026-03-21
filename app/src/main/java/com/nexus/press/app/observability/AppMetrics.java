@@ -200,14 +200,6 @@ public class AppMetrics {
 			.increment();
 	}
 
-	public void jobSkipped(final String job, final String reason) {
-		Counter.builder("press.jobs.skipped")
-			.description("Background job skips")
-			.tags("job", job, "reason", safeTag(reason, "unknown"))
-			.register(meterRegistry)
-			.increment();
-	}
-
 	public void deliveryMessageSuccess(final String channel) {
 		deliveryMessageCounter(channel, "success").increment();
 	}

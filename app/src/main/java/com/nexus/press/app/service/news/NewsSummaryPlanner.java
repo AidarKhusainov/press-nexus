@@ -50,7 +50,7 @@ public class NewsSummaryPlanner {
 		final String lang,
 		final SummarizationUseCase useCase
 	) {
-		return newsPersistenceService.findReusableSummary(news.getId(), news.getContentHash(), lang)
+		return newsPersistenceService.findReusableSummary(news.getId(), lang)
 			.flatMap(summary -> Mono.just(SummaryPlan.reuseCached(summary, REASON_CACHE_HIT)))
 			.switchIfEmpty(Mono.defer(() -> {
 				if (useCase == SummarizationUseCase.AUTO_CLUSTER && !isMature(news)) {

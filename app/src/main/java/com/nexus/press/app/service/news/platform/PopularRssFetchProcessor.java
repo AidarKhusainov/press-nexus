@@ -580,7 +580,7 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	}
 
 	private java.util.Optional<RawNews> mapItem(final Element elem, final FeedDefinition feed) {
-		final var externalId = firstNonBlank(
+		final var rawExternalId = firstNonBlank(
 			textOf(elem, "guid"),
 			textOf(elem, "id")
 		);
@@ -602,6 +602,7 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 			textOf(elem, "content_encoded")
 		);
 		final var resolvedLink = resolvePreferredLink(link, descriptionRaw);
+		final var externalId = firstNonBlank(rawExternalId, resolvedLink);
 		final var description = normalizeText(Jsoup.parse(descriptionRaw).text());
 		final var publishedAt = parsePublishedAt(firstNonBlank(
 			textOf(elem, "pubDate"),

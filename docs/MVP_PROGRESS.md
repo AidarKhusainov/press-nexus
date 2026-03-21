@@ -15,7 +15,7 @@ Last updated: 2026-03-09
 
 | Epic | Status | Progress |
 |---|---|---|
-| A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization are implemented; near-duplicate suppression now combines URL/content-hash, representative-only summarization, and brief-time similarity/text fallback, but duplicate reduction criterion is not confirmed by report |
+| A. Ingestion + Clean Data | IN_PROGRESS | Sources/fetch/normalization are implemented; near-duplicate suppression now combines URL idempotency, content-hash reuse for cache/dedup decisions, representative-only summarization, and brief-time similarity/text fallback, but duplicate reduction criterion is not confirmed by report |
 | B. Daily Brief Engine | IN_PROGRESS | Clustering, ranking, 3-block format, and tone moderation quality gate are implemented; `DailyBriefService` now re-ranks candidates with source diversity and a more stable must/good balance, usefulness KPI validation is pending beta data |
 | C. User Profile + Delivery | IN_PROGRESS | Scheduled Telegram delivery exists; digest personalization by topics/frequency via `users/user_topics` is enabled; onboarding UX with inline buttons is implemented; closed-beta launch runbook/helper script are added, KPI validation is pending |
 | D. Feedback + Analytics | IN_PROGRESS | Product-report API, daily scheduler, Prometheus snapshot metrics and Grafana dashboard are implemented; KPI filling requires real beta traffic |
@@ -27,7 +27,7 @@ Last updated: 2026-03-09
 |---|---|---|---|
 | A | Source registry + periodic fetch | DONE | `service/news/platform/*`, `service/scheduler/ScheduledNewsFetchTask.java` |
 | A | Article normalization (title/text/source/time/category/url) | DONE | `service/news/NewsPopulateContentService.java`, `service/news/NewsPersistenceService.java` |
-| A | Dedup (URL + similarity) | DONE | URL + `content_hash` in DB, representative-only summarization via clustering, and brief-time near-duplicate suppression via similarity/text fallback in `service/brief/DailyBriefService.java` |
+| A | Dedup (URL + similarity) | DONE | URL/`external_id` idempotency in DB, representative-only summarization via clustering, and brief-time near-duplicate suppression via similarity/text fallback in `service/brief/DailyBriefService.java` |
 | A | Criterion: -70% duplicates | CHECK | Separate baseline vs current report/metric required |
 | B | Event clustering | DONE | `service/news/NewsClusteringService.java`, `cluster*` tables |
 | B | must/good ranking | DONE | `service/brief/DailyBriefService.java` (`scoreImportance`) |

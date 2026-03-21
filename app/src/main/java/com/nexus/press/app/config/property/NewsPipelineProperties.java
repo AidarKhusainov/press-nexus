@@ -22,5 +22,4 @@ public class NewsPipelineProperties {
 	private int populateConcurrency = 6;
 	private int embeddingConcurrency = 2;
 	private int summaryConcurrency = 2;
-	private int discoveryBacklogHighWatermark = 500;
 }

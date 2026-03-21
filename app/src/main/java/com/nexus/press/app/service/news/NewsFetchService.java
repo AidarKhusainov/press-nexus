@@ -59,8 +59,17 @@ public class NewsFetchService {
 			.statusSummary(ProcessingStatus.PENDING)
 			.build();
 
-		return newsPersistenceService.upsertDiscovered(req)
-			.thenReturn(news.withRawContent(fallbackContent).withCleanContent(fallbackContent));
+		return newsPersistenceService.saveDiscoveredIfAbsent(req)
+			.map(saved -> news.withRawContent(fallbackContent).withCleanContent(fallbackContent))
+			.switchIfEmpty(Mono.defer(() -> {
+				log.debug(
+					"Пропускаем уже сохраненную RSS новость: source={} externalId={} url={}",
+					news.getSource(),
+					news.getExternalId(),
+					news.getLink()
+				);
+				return Mono.empty();
+			}));
 	}
 
 	private String discoveryContent(final RawNews news) {

@@ -127,7 +127,6 @@ class NewsSummarizationServiceTest {
 			.source(Media.BBC)
 			.publishedDate(OffsetDateTime.parse("2026-02-01T12:00:00Z"))
 			.fetchedDate(OffsetDateTime.parse("2026-02-01T12:01:00Z"))
-			.contentHash("hash-" + id)
 			.language(language)
 			.build();
 	}
@@ -225,7 +224,7 @@ class NewsSummarizationServiceTest {
 		}
 
 		@Override
-		public Mono<CachedSummary> findReusableSummary(final String newsId, final String contentHash, final String lang) {
+		public Mono<CachedSummary> findReusableSummary(final String newsId, final String lang) {
 			return reusableSummary == null ? Mono.empty() : Mono.just(reusableSummary);
 		}
 	}

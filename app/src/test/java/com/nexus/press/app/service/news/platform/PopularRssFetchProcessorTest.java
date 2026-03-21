@@ -99,6 +99,7 @@ class PopularRssFetchProcessorTest {
 		assertEquals(1, parsed.size());
 		final var news = parsed.getFirst();
 		assertEquals("https://example.com/atom-1", news.getId());
+		assertEquals("https://example.com/atom-1", news.getExternalId());
 		assertEquals("https://example.com/atom-1", news.getLink());
 		assertEquals("World update", news.getTitle());
 		assertEquals("latest updates", news.getDescription());
@@ -150,7 +151,7 @@ class PopularRssFetchProcessorTest {
 	}
 
 	@Test
-	void parseFeedUsesFallbackIdWhenGuidMissing() throws Exception {
+	void parseFeedUsesLinkAsExternalIdWhenGuidMissing() throws Exception {
 		final var xml = """
 			<rss version="2.0">
 			  <channel>
@@ -168,6 +169,7 @@ class PopularRssFetchProcessorTest {
 
 		assertEquals(1, parsed.size());
 		assertEquals("https://example.com/no-guid", parsed.getFirst().getId());
+		assertEquals("https://example.com/no-guid", parsed.getFirst().getExternalId());
 		assertFalse(parsed.getFirst().getId().isBlank());
 		assertNotEquals(" ", parsed.getFirst().getId());
 	}

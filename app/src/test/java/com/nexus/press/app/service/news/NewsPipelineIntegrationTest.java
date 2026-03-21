@@ -122,6 +122,154 @@ class NewsPipelineIntegrationTest {
 	}
 
 	@Test
+	void upsertMergesRowsByMediaAndExternalIdAndRefreshesUrl() {
+		final var persistenceService = new NewsPersistenceService(db);
+
+		final var first = persistenceService.upsert(NewsUpsertRequest.builder()
+				.id("ext-1")
+				.media("TOLKNEWS")
+				.externalId("tolknews-213052")
+				.url("https://example.com/tolknews/original")
+				.title("Original title")
+				.language("ru")
+				.fetchedAt(OffsetDateTime.parse("2026-03-20T00:00:00Z"))
+				.contentRaw("Original body")
+				.contentClean("Original body")
+				.statusContent(ProcessingStatus.DONE)
+				.statusEmbedding(ProcessingStatus.PENDING)
+				.statusSummary(ProcessingStatus.PENDING)
+				.build())
+			.block(Duration.ofSeconds(5));
+		final var second = persistenceService.upsert(NewsUpsertRequest.builder()
+				.id("ext-2")
+				.media("TOLKNEWS")
+				.externalId("tolknews-213052")
+				.url("https://example.com/tolknews/updated")
+				.title("Updated title")
+				.language("ru")
+				.fetchedAt(OffsetDateTime.parse("2026-03-20T00:01:00Z"))
+				.contentRaw("Updated body")
+				.contentClean("Updated body")
+				.statusContent(ProcessingStatus.DONE)
+				.statusEmbedding(ProcessingStatus.PENDING)
+				.statusSummary(ProcessingStatus.PENDING)
+				.build())
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(first);
+		assertNotNull(second);
+		assertEquals("ext-1", second.getId());
+		assertEquals("https://example.com/tolknews/updated", second.getUrl());
+		assertEquals("tolknews-213052", second.getExternalId());
+
+		final var persisted = db.sql("""
+			SELECT id, external_id, url, title, content_clean
+			FROM news
+			WHERE media = 'TOLKNEWS'
+			  AND external_id = :externalId
+			""")
+			.bind("externalId", "tolknews-213052")
+			.map((row, md) -> new ExternalIdPersistedNews(
+				row.get("id", String.class),
+				row.get("external_id", String.class),
+				row.get("url", String.class),
+				row.get("title", String.class),
+				row.get("content_clean", String.class)
+			))
+			.one()
+			.block(Duration.ofSeconds(5));
+		final var rowCount = db.sql("""
+			SELECT COUNT(*)
+			FROM news
+			WHERE media = 'TOLKNEWS'
+			  AND external_id = :externalId
+			""")
+			.bind("externalId", "tolknews-213052")
+			.map((row, md) -> ((Number) row.get(0)).longValue())
+			.one()
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(persisted);
+		assertEquals("ext-1", persisted.id());
+		assertEquals("tolknews-213052", persisted.externalId());
+		assertEquals("https://example.com/tolknews/updated", persisted.url());
+		assertEquals("Updated title", persisted.title());
+		assertEquals("Updated body", persisted.contentClean());
+		assertEquals(1L, rowCount);
+	}
+
+	@Test
+	void saveDiscoveredIfAbsentIgnoresAlreadySavedNewsByUrl() {
+		final var persistenceService = new NewsPersistenceService(db);
+
+		final var first = persistenceService.saveDiscoveredIfAbsent(NewsUpsertRequest.builder()
+				.id("discovered-1")
+				.media("BBC")
+				.externalId("bbc-1")
+				.url("https://example.com/discovered")
+				.title("Original discovered title")
+				.language("en")
+				.fetchedAt(OffsetDateTime.parse("2026-03-20T00:00:00Z"))
+				.contentRaw("Original discovered body")
+				.contentClean("Original discovered body")
+				.statusContent(ProcessingStatus.PENDING)
+				.statusEmbedding(ProcessingStatus.PENDING)
+				.statusSummary(ProcessingStatus.PENDING)
+				.build())
+			.block(Duration.ofSeconds(5));
+		final var duplicate = persistenceService.saveDiscoveredIfAbsent(NewsUpsertRequest.builder()
+				.id("discovered-2")
+				.media("BBC")
+				.externalId("bbc-2")
+				.url("https://example.com/discovered")
+				.title("Duplicate discovered title")
+				.language("en")
+				.fetchedAt(OffsetDateTime.parse("2026-03-20T00:05:00Z"))
+				.contentRaw("Duplicate discovered body")
+				.contentClean("Duplicate discovered body")
+				.statusContent(ProcessingStatus.PENDING)
+				.statusEmbedding(ProcessingStatus.PENDING)
+				.statusSummary(ProcessingStatus.PENDING)
+				.build())
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(first);
+		assertNull(duplicate);
+
+		final var persisted = db.sql("""
+			SELECT id, external_id, url, title, content_clean
+			FROM news
+			WHERE url = :url
+			""")
+			.bind("url", "https://example.com/discovered")
+			.map((row, md) -> new ExternalIdPersistedNews(
+				row.get("id", String.class),
+				row.get("external_id", String.class),
+				row.get("url", String.class),
+				row.get("title", String.class),
+				row.get("content_clean", String.class)
+			))
+			.one()
+			.block(Duration.ofSeconds(5));
+		final var rowCount = db.sql("""
+			SELECT COUNT(*)
+			FROM news
+			WHERE url = :url
+			""")
+			.bind("url", "https://example.com/discovered")
+			.map((row, md) -> ((Number) row.get(0)).longValue())
+			.one()
+			.block(Duration.ofSeconds(5));
+
+		assertNotNull(persisted);
+		assertEquals("discovered-1", persisted.id());
+		assertEquals("bbc-1", persisted.externalId());
+		assertEquals("Original discovered title", persisted.title());
+		assertEquals("Original discovered body", persisted.contentClean());
+		assertEquals(1L, rowCount);
+	}
+
+	@Test
 	void claimContentUsesStageLeaseAndDoesNotRetryFailedRows() {
 		insertNewsRow("pending-1", "PENDING", null);
 		insertNewsRow("failed-1", "FAILED", null);
@@ -220,9 +368,9 @@ class NewsPipelineIntegrationTest {
 		persistenceService.saveNewsSummary("summary-cache", "GEMINI:model", "ru", "Russian summary", null)
 			.block(Duration.ofSeconds(5));
 
-		final var exact = persistenceService.findReusableSummary("summary-cache", "hash-summary-cache", "ru")
+		final var exact = persistenceService.findReusableSummary("summary-cache", "ru")
 			.block(Duration.ofSeconds(5));
-		final var mismatch = persistenceService.findReusableSummary(null, "hash-summary-cache", "es")
+		final var mismatch = persistenceService.findReusableSummary("summary-cache", "es")
 			.block(Duration.ofSeconds(5));
 
 		assertNotNull(exact);
@@ -240,10 +388,10 @@ class NewsPipelineIntegrationTest {
 	private void insertNewsRow(final String id, final String statusContent, final OffsetDateTime contentClaimedAt) {
 		var spec = db.sql("""
 			INSERT INTO news (
-				id, media, url, title, fetched_at, content_raw, content_clean, content_hash,
+				id, media, url, title, fetched_at, content_raw, content_clean,
 				status_content, status_embedding, status_summary, content_claimed_at
 			) VALUES (
-				:id, 'BBC', :url, :title, now(), :content, :content, :contentHash,
+				:id, 'BBC', :url, :title, now(), :content, :content,
 				:statusContent, 'PENDING', 'PENDING', :contentClaimedAt
 			)
 			""")
@@ -251,7 +399,6 @@ class NewsPipelineIntegrationTest {
 			.bind("url", "https://example.com/" + id)
 			.bind("title", "Title " + id)
 			.bind("content", "Content " + id)
-			.bind("contentHash", "hash-" + id)
 			.bind("statusContent", statusContent);
 		spec = contentClaimedAt != null
 			? spec.bind("contentClaimedAt", contentClaimedAt)
@@ -271,10 +418,10 @@ class NewsPipelineIntegrationTest {
 	) {
 		var spec = db.sql("""
 			INSERT INTO news (
-				id, media, url, title, fetched_at, content_raw, content_clean, content_hash,
+				id, media, url, title, fetched_at, content_raw, content_clean,
 				status_content, status_embedding, status_summary, embedding_claimed_at
 			) VALUES (
-				:id, 'BBC', :url, :title, now(), :rawContent, :cleanContent, :contentHash,
+				:id, 'BBC', :url, :title, now(), :rawContent, :cleanContent,
 				:statusContent, :statusEmbedding, :statusSummary, :embeddingClaimedAt
 			)
 			""")
@@ -282,7 +429,6 @@ class NewsPipelineIntegrationTest {
 			.bind("url", "https://example.com/" + id)
 			.bind("title", "Title " + id)
 			.bind("rawContent", "Raw " + id)
-			.bind("contentHash", "hash-" + id)
 			.bind("statusContent", statusContent)
 			.bind("statusEmbedding", statusEmbedding)
 			.bind("statusSummary", statusSummary);
@@ -426,5 +572,13 @@ class NewsPipelineIntegrationTest {
 		String statusContent,
 		String statusEmbedding,
 		String statusSummary
+	) {}
+
+	private record ExternalIdPersistedNews(
+		String id,
+		String externalId,
+		String url,
+		String title,
+		String contentClean
 	) {}
 }

@@ -20,18 +20,17 @@ class NewsPersistenceServiceTest {
 		final var expected = NewsEntity.builder()
 			.id("news-1")
 			.url("https://example.com/news-1")
-			.contentHash("hash-1")
 			.build();
 		final var service = new NewsPersistenceService(mock(DatabaseClient.class)) {
 			@Override
-			Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url, final String contentHash) {
+			Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url) {
 				return attempts.incrementAndGet() < 3
 					? Mono.empty()
 					: Mono.just(expected);
 			}
 		};
 
-		final var resolved = service.resolveExistingByNaturalKeysForDuplicate("news-1", "https://example.com/news-1", "hash-1")
+		final var resolved = service.resolveExistingByNaturalKeysForDuplicate("news-1", "https://example.com/news-1")
 			.block(Duration.ofSeconds(5));
 
 		assertNotNull(resolved);
@@ -44,14 +43,14 @@ class NewsPersistenceServiceTest {
 		final var attempts = new AtomicInteger();
 		final var service = new NewsPersistenceService(mock(DatabaseClient.class)) {
 			@Override
-			Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url, final String contentHash) {
+			Mono<NewsEntity> loadExistingByNaturalKeys(final String id, final String url) {
 				attempts.incrementAndGet();
 				return Mono.empty();
 			}
 		};
 
 		final var ex = assertThrows(IllegalStateException.class, () ->
-			service.resolveExistingByNaturalKeysForDuplicate("news-1", "https://example.com/news-1", "hash-1")
+			service.resolveExistingByNaturalKeysForDuplicate("news-1", "https://example.com/news-1")
 				.block(Duration.ofSeconds(5))
 		);
 

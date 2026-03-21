@@ -23,7 +23,7 @@
 - Scarce-provider usage must be optimized for user value:
   - automatic cluster summarization is limited to daily top-N representatives ranked by cluster size, freshness, and source quality
   - non-representative duplicates must inherit a cached representative summary instead of calling an external model again
-  - article-level summary cache must be reused by `news_id` and `content_hash` before any provider call
+  - article-level summary cache must be reused by `news_id` before any provider call
   - automatic cluster summarization must wait for a short maturity window before spending a provider request on a developing story
 - Summarization routing must support provider failover:
   - primary provider remains configuration-driven
@@ -31,7 +31,7 @@
   - budget buckets must keep capacity for automatic clusters, explicit user-facing requests, and reserve/emergency traffic separately
 - Cheap fallback summaries must remain available when all external providers are unavailable; degraded output is acceptable, empty output is not.
 - DB backlog target: pending backlog should stay bounded and observable; alerting is based on backlog size/age, not readiness state.
-- Discovery throttling must be driven only by active ingest backlog (`content`/`embedding` pending or leased work); stale `summary` or `FAILED` backlog must remain observable without pausing new fetch cycles.
+- Discovery fetch cycles must continue on schedule regardless of backlog; active ingest backlog (`content`/`embedding` pending or leased work) must remain observable and alertable without pausing new fetch cycles.
 - Embedding throughput should use batched backend requests and bounded stage concurrency so backlog can be reduced without unbounded in-memory fan-out.
 - Similarity/clustering must use true cosine semantics for normalized embeddings; any threshold rollout must be validated on real pairwise score distribution before production enablement.
 
@@ -60,7 +60,6 @@
   - pipeline backlog by stage/state
   - external HTTP latency and error ratio
   - scheduler run/failure counters
-  - scheduler skip counters
   - daily product-report snapshot gauges for D1/D7 retention and Useful/Noise rates
 - Health endpoints must expose readiness/liveness.
 

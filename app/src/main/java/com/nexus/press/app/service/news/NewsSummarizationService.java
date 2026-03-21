@@ -82,7 +82,7 @@ public class NewsSummarizationService {
 		final String lang = normalizeLanguage(news.getLanguage());
 
 		return newsPersistenceService.updateStatusSummary(news.getId(), ProcessingStatus.IN_PROGRESS)
-			.then(newsPersistenceService.findReusableSummary(representativeId, news.getContentHash(), lang))
+			.then(newsPersistenceService.findReusableSummary(representativeId, lang))
 			.flatMap(cachedSummary -> persistSummary(
 				news,
 				lang,
@@ -211,7 +211,6 @@ public class NewsSummarizationService {
 			.source(source.getSource())
 			.publishedDate(source.getPublishedDate())
 			.fetchedDate(source.getFetchedDate())
-			.contentHash(source.getContentHash())
 			.language(source.getLanguage())
 			.contentSummary(summary)
 			.build();

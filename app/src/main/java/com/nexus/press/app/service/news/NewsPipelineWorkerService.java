@@ -224,7 +224,6 @@ public class NewsPipelineWorkerService {
 			.source(news.getSource())
 			.publishedDate(news.getPublishedDate())
 			.fetchedDate(news.getFetchedDate())
-			.contentHash(news.getContentHash())
 			.language(news.getLanguage())
 			.build();
 	}

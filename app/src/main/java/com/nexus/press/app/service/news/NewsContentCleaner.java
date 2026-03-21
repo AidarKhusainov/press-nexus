@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import com.nexus.press.app.service.news.model.Media;
 import com.nexus.press.app.service.news.model.RawNews;
 import org.jsoup.Jsoup;
+import org.jsoup.parser.Parser;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -19,6 +20,10 @@ public class NewsContentCleaner {
 	private static final int PREFIX_SCAN_LIMIT = 2500;
 	private static final Pattern MULTI_SPACE = Pattern.compile("[ \\t\\x0B\\f\\r]+");
 	private static final Pattern MULTI_BREAK = Pattern.compile("(?:\\R\\s*){2,}");
+	private static final Pattern HTML_LIKE_MARKUP = Pattern.compile(
+		"(?is)(?:<\\/?(?:p|div|span|article|section|h[1-6]|li|ul|ol|br|figure|blockquote|img|a)\\b|"
+			+ "&lt;\\/?(?:p|div|span|article|section|h[1-6]|li|ul|ol|br|figure|blockquote|img|a)\\b)"
+	);
 	private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
 	private static final Pattern TIME_PATTERN = Pattern.compile("\\b\\d{1,2}:\\d{2}\\b");
 	private static final Pattern COMMENT_TIMESTAMP_PATTERN = Pattern.compile("\\b\\d{2}:\\d{2}:\\d{2}\\s+\\d{2}-\\d{2}-\\d{4}\\b");
@@ -62,6 +67,9 @@ public class NewsContentCleaner {
 	);
 
 	private static final List<String> INLINE_HARD_STOP_MARKERS = List.of(
+		"читайте также",
+		"related article",
+		"related gallery",
 		"подробнее: https://",
 		"подробнее: http://",
 		"все важные новости",
@@ -91,7 +99,7 @@ public class NewsContentCleaner {
 		final String rawContent,
 		final Media media
 	) {
-		final String normalizedRaw = normalize(rawContent);
+		final String normalizedRaw = normalizeRawContent(rawContent);
 		if (!StringUtils.hasText(normalizedRaw)) {
 			return fallback(title, description);
 		}
@@ -238,6 +246,9 @@ public class NewsContentCleaner {
 		final String normalizedTitle = normalize(stripHtml(title));
 		final String normalizedDescription = normalize(stripHtml(description));
 		if (StringUtils.hasText(normalizedTitle) && StringUtils.hasText(normalizedDescription)) {
+			if (normalizedTitle.equalsIgnoreCase(normalizedDescription)) {
+				return normalizedTitle;
+			}
 			return normalizedTitle + "\n\n" + normalizedDescription;
 		}
 		if (StringUtils.hasText(normalizedDescription)) {
@@ -251,6 +262,31 @@ public class NewsContentCleaner {
 			return "";
 		}
 		return Jsoup.parse(value).text();
+	}
+
+	private String normalizeRawContent(final String rawContent) {
+		if (!StringUtils.hasText(rawContent)) {
+			return "";
+		}
+		if (!looksLikeMarkup(rawContent)) {
+			return normalize(rawContent);
+		}
+
+		String decoded = rawContent;
+		for (int i = 0; i < 2; i++) {
+			decoded = Parser.unescapeEntities(decoded, false);
+		}
+
+		final var doc = Jsoup.parseBodyFragment(decoded);
+		doc.select("script,style,noscript,iframe,svg").remove();
+		doc.select("br").append("\\n");
+		doc.select("p,div,section,article,li,ul,ol,h1,h2,h3,h4,h5,h6,figure,figcaption,blockquote")
+			.forEach(element -> element.after("\\n\\n"));
+		return normalize(doc.text().replace("\\n", "\n"));
+	}
+
+	private boolean looksLikeMarkup(final String value) {
+		return StringUtils.hasText(value) && HTML_LIKE_MARKUP.matcher(value).find();
 	}
 
 	private static boolean containsAny(final String value, final List<String> markers) {

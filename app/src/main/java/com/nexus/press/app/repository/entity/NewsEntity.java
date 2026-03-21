@@ -50,9 +50,6 @@ public class NewsEntity {
 	@Column("content_clean")
 	private String contentClean;
 
-	@Column("content_hash")
-	private String contentHash;
-
 	@Column("status_content")
 	private String statusContent;
 
