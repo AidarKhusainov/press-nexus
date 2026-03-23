@@ -13,6 +13,7 @@ import com.nexus.press.app.news.model.RawNews;
 import com.nexus.press.app.news.persistence.repository.NewsRepository;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.news.integration.NewsFetchProcessor;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ public class FetchNews {
 	private final NewsRepository newsRepository;
 	private final NewsPipelineProperties newsPipelineProperties;
 	private final AppMetrics appMetrics;
+	private final PipelineRuntimeStats pipelineRuntimeStats;
 
 	public Flux<RawNews> execute() {
 		return Flux.fromIterable(newsFetchProcessors)
@@ -79,17 +81,18 @@ public class FetchNews {
 				news.getFetchedDate(),
 				news.getLanguage()
 			))
-				.doOnSuccess(savedNews -> {
-					if (savedNews != null) {
-						return;
-					}
-					log.debug(
-						"Пропускаем уже сохраненную RSS новость: source={} externalId={} url={}",
-						news.getSource(),
-						news.getExternalId(),
-						news.getLink()
-					);
-				});
+			.doOnSuccess(savedNews -> {
+				if (savedNews != null) {
+					pipelineRuntimeStats.recordDiscoveredNews();
+					return;
+				}
+				log.debug(
+					"Пропускаем уже сохраненную RSS новость: source={} externalId={} url={}",
+					news.getSource(),
+					news.getExternalId(),
+					news.getLink()
+				);
+			});
 	}
 
 	private String discoveryContent(final RawNews news) {

@@ -31,6 +31,7 @@ import com.nexus.press.app.news.persistence.query.PostgresNewsPipelineQuery;
 import com.nexus.press.app.news.persistence.repository.NewsRepository;
 import com.nexus.press.app.news.persistence.repository.PostgresNewsRepository;
 import com.nexus.press.app.news.persistence.repository.PostgresNewsSimilarityRepository;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import com.nexus.press.app.news.usecase.PopulateNewsContent;
 import com.nexus.press.app.news.usecase.UpsertNews;
 import com.nexus.press.app.observability.AppMetrics;
@@ -93,7 +94,8 @@ class NewsPipelineIntegrationTest {
 			new NewsContentCleaner(),
 			new UpsertNews(newsRepository),
 			newsRepository,
-			APP_METRICS
+			APP_METRICS,
+			new PipelineRuntimeStats()
 		);
 
 		final var id = "it-" + UUID.randomUUID();

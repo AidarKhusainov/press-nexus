@@ -13,6 +13,7 @@ import com.nexus.press.app.news.model.RawNews;
 import com.nexus.press.app.news.model.SimilarNewsNeighbor;
 import com.nexus.press.app.news.persistence.repository.NewsRepository;
 import com.nexus.press.app.news.persistence.repository.NewsSimilarityRepository;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.ai.integration.embed.EmbeddingService;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 class EmbedNewsTest {
 
 	private static final AppMetrics APP_METRICS = new AppMetrics(new SimpleMeterRegistry());
+	private static final PipelineRuntimeStats PIPELINE_RUNTIME_STATS = new PipelineRuntimeStats();
 
 	@Test
 	void embedPersistsVectorAndDropsItFromProcessedPayload() {
@@ -39,7 +41,13 @@ class EmbedNewsTest {
 			statusHistory.add(invocation.getArgument(1));
 			return Mono.empty();
 		});
-		final var service = new EmbedNews(embeddingService, similarityStore, newsRepository, APP_METRICS);
+		final var service = new EmbedNews(
+			embeddingService,
+			similarityStore,
+			newsRepository,
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
+		);
 
 		final var result = service.execute(sampleRawNews("id-1")).block();
 
@@ -64,7 +72,13 @@ class EmbedNewsTest {
 			statusHistory.add(invocation.getArgument(1));
 			return Mono.empty();
 		});
-		final var single = new EmbedNews(embeddingService, similarityStore, newsRepository, APP_METRICS);
+		final var single = new EmbedNews(
+			embeddingService,
+			similarityStore,
+			newsRepository,
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
+		);
 		final var service = new EmbedNewsBatch(embeddingService, single, APP_METRICS);
 
 		final var result = service.execute(List.of(sampleRawNews("id-1"), sampleRawNews("id-2"))).block();

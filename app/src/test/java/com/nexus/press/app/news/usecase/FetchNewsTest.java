@@ -12,6 +12,7 @@ import com.nexus.press.app.news.model.NewsUpsertRequest;
 import com.nexus.press.app.news.model.RawNews;
 import com.nexus.press.app.news.integration.NewsFetchProcessor;
 import com.nexus.press.app.news.persistence.repository.NewsRepository;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import com.nexus.press.app.observability.AppMetrics;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +36,8 @@ class FetchNewsTest {
 			List.of(processor),
 			newsRepository,
 			new NewsPipelineProperties(),
-			APP_METRICS
+			APP_METRICS,
+			new PipelineRuntimeStats()
 		);
 		final var news = RawNews.builder()
 			.id("news-1")

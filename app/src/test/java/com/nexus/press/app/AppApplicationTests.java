@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import com.nexus.press.app.analytics.job.ScheduledProductReportTask;
 import com.nexus.press.app.news.job.ScheduledNewsFetchTask;
+import com.nexus.press.app.news.job.ScheduledNewsPipelineDebugReportTask;
 import com.nexus.press.app.news.job.ScheduledNewsPipelineTask;
 import com.nexus.press.app.telegram.job.ScheduledTelegramDailyBriefTask;
 
@@ -22,6 +23,9 @@ class AppApplicationTests {
 
 	@MockBean
 	private ScheduledNewsPipelineTask scheduledNewsPipelineTask;
+
+	@MockBean
+	private ScheduledNewsPipelineDebugReportTask scheduledNewsPipelineDebugReportTask;
 
 	@MockBean
 	private ScheduledTelegramDailyBriefTask scheduledTelegramDailyBriefTask;

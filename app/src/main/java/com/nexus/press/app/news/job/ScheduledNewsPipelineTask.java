@@ -37,6 +37,10 @@ public class ScheduledNewsPipelineTask {
 				null,
 				error -> log.error("Worker news pipeline ingestion остановлен из-за необработанной ошибки", error)
 			);
+		if (!newsPipelineProperties.isSummaryEnabled()) {
+			log.info("Worker news pipeline summary отключен (press.news.pipeline.summary-enabled=false)");
+			return;
+		}
 		summarySubscription = scheduledSummaryLoop(interval)
 			.doOnSubscribe(s -> log.info("Запущен worker news pipeline summary"))
 			.subscribe(

@@ -13,6 +13,13 @@ public class NewsPipelineProperties {
 	private Duration discoveryInterval = Duration.ofMinutes(10);
 	private Duration workerInterval = Duration.ofSeconds(30);
 	private Duration claimTimeout = Duration.ofMinutes(30);
+	private boolean summaryEnabled = true;
+	private boolean debugReportEnabled = false;
+	private Duration debugReportInterval = Duration.ofMinutes(30);
+	private Duration debugReportLookback = Duration.ofHours(24);
+	private int debugReportTopClusters = 10;
+	private int debugReportMinClusterSize = 5;
+	private int debugReportMaxClusterSize = 10;
 	private int discoveryPersistConcurrency = 4;
 	private int fetchSourceConcurrency = 4;
 	private int contentBatchSize = 24;

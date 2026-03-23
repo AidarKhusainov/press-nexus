@@ -10,6 +10,7 @@ import com.nexus.press.app.news.persistence.repository.NewsRepository;
 import com.nexus.press.app.news.persistence.repository.NewsSimilarityRepository;
 import com.nexus.press.app.observability.AppMetrics;
 import com.nexus.press.app.ai.integration.embed.EmbeddingService;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,6 +26,7 @@ public class EmbedNews {
 	private final NewsSimilarityRepository newsSimilarityRepository;
 	private final NewsRepository newsRepository;
 	private final AppMetrics appMetrics;
+	private final PipelineRuntimeStats pipelineRuntimeStats;
 
 	public Mono<ProcessedNews> execute(final RawNews rawNews) {
 		final var timerSample = appMetrics.startStageTimer();
@@ -68,7 +70,10 @@ public class EmbedNews {
 			.thenReturn(toProcessedNews(rawNews))
 			.flatMap(processed -> newsRepository.updateStatusEmbedding(processed.getId(), ProcessingStatus.DONE)
 				.thenReturn(processed))
-			.doOnNext(news -> appMetrics.stageSuccess("embedding", timerSample))
+			.doOnNext(news -> {
+				appMetrics.stageSuccess("embedding", timerSample);
+				pipelineRuntimeStats.recordEmbeddedNews();
+			})
 			.onErrorResume(ex -> {
 				appMetrics.stageFailure("embedding", timerSample, ex);
 				log.warn("Сбой эмбеддинга: id={} title={}", rawNews.getId(), rawNews.getTitle(), ex);

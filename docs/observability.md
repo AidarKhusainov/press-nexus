@@ -38,6 +38,8 @@ Any new critical flow must include at least one metric and one actionable log ev
 - Scheduler dashboards should track `news_pipeline_worker_ingestion` and `news_pipeline_worker_summary` separately so long summary runs do not mask stalled ingest/content/embed work.
 - Pipeline backlog should be inspected from metrics/dashboard first; if ad-hoc SQL is needed, the `news` table uses `status_content`, `status_embedding`, and `status_summary`.
 - Embedding throughput tuning must be validated against `press.pipeline.backlog{stage="embedding",state=~"pending|in_progress"}`, `press.pipeline.stage.duration{stage="embedding"}`, and `press_http_client_duration_seconds{client="OLLAMA"}`.
+- Temporary production debugging can disable the summary worker with `press.news.pipeline.summary-enabled=false` and enable Telegram diagnostics with `press.news.pipeline.debug-report-enabled=true`.
+- The Telegram pipeline debug report uses runtime counters since the previous report for discovered/populated/embedded news and computes clusters from the current `summary-ready` backlog using the same maturity/claim conditions as the summary stage, but without executing summarization.
 - Summarization provider rollouts must be validated against `press_http_client_duration_seconds{client=~"GEMINI|GROQ|CLOUDFLARE_WORKERS_AI|MISTRAL"}` and matching external error metrics before switching `press.ai.summarization.provider` in production.
 - Gemini investigations must look at both provider-level quota and app-side guardrails:
   - `429` should correlate with `press_http_client_requests{client="GEMINI",outcome="client_error",status="429"}` and summary backlog staying leased instead of flipping to `FAILED`

@@ -27,7 +27,14 @@ class SummarizationPropertiesBindingTest {
 				"press.ai.summarization.reserve-daily-budget=3",
 				"press.ai.summarization.auto-cluster-top-n-per-day=12",
 				"press.ai.summarization.auto-cluster-maturity=15m",
-				"press.news.pipeline.summary-maturity=15m"
+				"press.news.pipeline.summary-enabled=false",
+				"press.news.pipeline.summary-maturity=15m",
+				"press.news.pipeline.debug-report-enabled=true",
+				"press.news.pipeline.debug-report-interval=45m",
+				"press.news.pipeline.debug-report-lookback=6h",
+				"press.news.pipeline.debug-report-top-clusters=10",
+				"press.news.pipeline.debug-report-min-cluster-size=5",
+				"press.news.pipeline.debug-report-max-cluster-size=10"
 			)
 			.run(context -> {
 				assertThat(context).hasNotFailed();
@@ -44,6 +51,13 @@ class SummarizationPropertiesBindingTest {
 				assertThat(summarizationProperties.autoClusterTopNPerDay()).isEqualTo(12);
 				assertThat(summarizationProperties.autoClusterMaturity()).isEqualTo(Duration.ofMinutes(15));
 				assertThat(context.getBean(NewsPipelineProperties.class).getSummaryMaturity()).isEqualTo(Duration.ofMinutes(15));
+				assertThat(context.getBean(NewsPipelineProperties.class).isSummaryEnabled()).isFalse();
+				assertThat(context.getBean(NewsPipelineProperties.class).isDebugReportEnabled()).isTrue();
+				assertThat(context.getBean(NewsPipelineProperties.class).getDebugReportInterval()).isEqualTo(Duration.ofMinutes(45));
+				assertThat(context.getBean(NewsPipelineProperties.class).getDebugReportLookback()).isEqualTo(Duration.ofHours(6));
+				assertThat(context.getBean(NewsPipelineProperties.class).getDebugReportTopClusters()).isEqualTo(10);
+				assertThat(context.getBean(NewsPipelineProperties.class).getDebugReportMinClusterSize()).isEqualTo(5);
+				assertThat(context.getBean(NewsPipelineProperties.class).getDebugReportMaxClusterSize()).isEqualTo(10);
 			});
 	}
 

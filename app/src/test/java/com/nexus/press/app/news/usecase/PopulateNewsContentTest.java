@@ -12,6 +12,7 @@ import com.nexus.press.app.news.model.RawNews;
 import com.nexus.press.app.news.integration.NewsPopulateContentProcessor;
 import com.nexus.press.app.news.policy.NewsContentCleaner;
 import com.nexus.press.app.news.persistence.repository.NewsRepository;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import com.nexus.press.app.observability.AppMetrics;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.when;
 class PopulateNewsContentTest {
 
 	private static final AppMetrics APP_METRICS = new AppMetrics(new SimpleMeterRegistry());
+	private static final PipelineRuntimeStats PIPELINE_RUNTIME_STATS = new PipelineRuntimeStats();
 
 	@Test
 	void populateContinuesWhenProcessorFailsAndPersistsFallbackContent() {
@@ -55,7 +57,8 @@ class PopulateNewsContentTest {
 			new NewsContentCleaner(),
 			upsertNews,
 			newsRepository,
-			APP_METRICS
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
 		);
 
 		final var result = service.execute(source).block();
@@ -101,7 +104,8 @@ class PopulateNewsContentTest {
 			new NewsContentCleaner(),
 			upsertNews,
 			newsRepository,
-			APP_METRICS
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
 		);
 
 		final var result = service.execute(source).block();
@@ -122,7 +126,14 @@ class PopulateNewsContentTest {
 			return Mono.just(request.getId());
 		});
 
-		final var service = new PopulateNewsContent(List.of(), new NewsContentCleaner(), upsertNews, newsRepository, APP_METRICS);
+		final var service = new PopulateNewsContent(
+			List.of(),
+			new NewsContentCleaner(),
+			upsertNews,
+			newsRepository,
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
+		);
 		final var source = sampleNews("id-3", "plain description");
 
 		final var result = service.execute(source).block();
@@ -186,7 +197,8 @@ class PopulateNewsContentTest {
 			new NewsContentCleaner(),
 			upsertNews,
 			newsRepository,
-			APP_METRICS
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
 		);
 		final var result = service.execute(source).block();
 
@@ -228,7 +240,8 @@ class PopulateNewsContentTest {
 			new NewsContentCleaner(),
 			upsertNews,
 			newsRepository,
-			APP_METRICS
+			APP_METRICS,
+			PIPELINE_RUNTIME_STATS
 		);
 
 		final var result = service.execute(source).block();

@@ -11,6 +11,7 @@ import com.nexus.press.app.news.integration.NewsPopulateContentProcessor;
 import com.nexus.press.app.news.policy.NewsContentCleaner;
 import com.nexus.press.app.news.persistence.repository.NewsRepository;
 import com.nexus.press.app.observability.AppMetrics;
+import com.nexus.press.app.news.support.PipelineRuntimeStats;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -24,13 +25,15 @@ public class PopulateNewsContent {
 	private final UpsertNews upsertNews;
 	private final NewsRepository newsRepository;
 	private final AppMetrics appMetrics;
+	private final PipelineRuntimeStats pipelineRuntimeStats;
 
 	public PopulateNewsContent(
 		final List<NewsPopulateContentProcessor> populateContentProcessors,
 		final NewsContentCleaner newsContentCleaner,
 		final UpsertNews upsertNews,
 		final NewsRepository newsRepository,
-		final AppMetrics appMetrics
+		final AppMetrics appMetrics,
+		final PipelineRuntimeStats pipelineRuntimeStats
 	) {
 		this.populateContentProcessors = populateContentProcessors.stream()
 			.sorted(Comparator.comparingInt(NewsPopulateContentProcessor::getPriority).reversed())
@@ -39,6 +42,7 @@ public class PopulateNewsContent {
 		this.upsertNews = upsertNews;
 		this.newsRepository = newsRepository;
 		this.appMetrics = appMetrics;
+		this.pipelineRuntimeStats = pipelineRuntimeStats;
 	}
 
 	public Mono<RawNews> execute(final RawNews rawNews) {
@@ -59,7 +63,10 @@ public class PopulateNewsContent {
 			.map(this::withFallbackContent)
 			.flatMap(this::persist)
 			.timeout(Duration.ofMinutes(5))
-			.doOnNext(news -> appMetrics.stageSuccess("populate", timerSample))
+			.doOnNext(news -> {
+				appMetrics.stageSuccess("populate", timerSample);
+				pipelineRuntimeStats.recordPopulatedNews();
+			})
 			.onErrorResume(ex -> {
 				appMetrics.stageFailure("populate", timerSample, ex);
 				log.error("Ошибка при заполнении новости: id={} title={}", rawNews.getId(), rawNews.getTitle(), ex);

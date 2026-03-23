@@ -4,6 +4,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import com.nexus.press.app.news.model.ClusterReportNewsItem;
 import com.nexus.press.app.news.model.NewsPipelineBacklogSnapshot;
 import com.nexus.press.app.news.model.NewsSummaryPriorityCandidate;
 import com.nexus.press.app.news.model.Media;
@@ -148,6 +149,48 @@ public class PostgresNewsPipelineQuery {
 			.bind("maturitySeconds", maturitySeconds)
 			.bind("limit", safeLimit)
 			.map(this::mapRawNewsRow)
+			.all();
+	}
+
+	public Flux<ClusterReportNewsItem> loadSummaryReadyNews(final Duration claimTimeout, final Duration maturityWindow) {
+		final long leaseSeconds = safeLeaseSeconds(claimTimeout);
+		final long maturitySeconds = Math.max(0L, maturityWindow == null ? 0L : maturityWindow.toSeconds());
+		final String sql = """
+			SELECT n.id,
+			       n.title,
+			       n.url,
+			       n.media,
+			       COALESCE(n.published_at, n.fetched_at, n.created_at) AS event_at
+			FROM news n
+			WHERE n.status_content = 'DONE'
+			  AND n.status_embedding = 'DONE'
+			  AND n.content_clean IS NOT NULL
+			  AND btrim(n.content_clean) <> ''
+			  AND COALESCE(n.published_at, n.fetched_at, n.created_at)
+			      <= now() - (:maturitySeconds * interval '1 second')
+			  AND (
+			       n.status_summary = 'PENDING'
+			       OR (
+			            n.status_summary = 'IN_PROGRESS'
+			            AND (
+			                 n.summary_claimed_at IS NULL
+			                 OR n.summary_claimed_at < now() - (:leaseSeconds * interval '1 second')
+			            )
+			       )
+			  )
+			ORDER BY n.created_at ASC, n.id ASC
+			""";
+
+		return db.sql(sql)
+			.bind("leaseSeconds", leaseSeconds)
+			.bind("maturitySeconds", maturitySeconds)
+			.map((row, metadata) -> new ClusterReportNewsItem(
+				row.get("id", String.class),
+				row.get("title", String.class),
+				row.get("url", String.class),
+				row.get("media", String.class),
+				row.get("event_at", OffsetDateTime.class)
+			))
 			.all();
 	}
 

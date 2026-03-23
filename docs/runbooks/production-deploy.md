@@ -94,6 +94,13 @@ Monitoring ports should also stay on loopback and be accessed through SSH tunnel
 The production app container now defaults to `3g` and the JVM exits on `OutOfMemoryError`, so Docker can restart the service instead of leaving it running but unhealthy.
 The production Ollama container now defaults to `6` vCPU / `8g` RAM with `OLLAMA_NUM_PARALLEL=4`, and the app drives embedding with batched requests plus `PRESS_NEWS_PIPELINE_EMBEDDING_CONCURRENCY=4`.
 
+For temporary production analysis of ingestion/clustering without summarization, set:
+- `PRESS_NEWS_PIPELINE_SUMMARY_ENABLED=false`
+- `PRESS_NEWS_PIPELINE_DEBUG_REPORT_ENABLED=true`
+- optionally adjust `PRESS_NEWS_PIPELINE_DEBUG_REPORT_INTERVAL`, `PRESS_NEWS_PIPELINE_DEBUG_REPORT_LOOKBACK`, and cluster-size bounds
+
+The debug report is delivered to `platform.telegram.delivery.chat-ids` using the configured Telegram bot token and reflects the current `summary-ready` backlog rather than all recent embedded news.
+
 ## Manual Fallback
 
 If GitHub Actions is unavailable, export the required runtime variables in the shell and run:

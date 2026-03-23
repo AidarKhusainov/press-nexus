@@ -16,6 +16,7 @@ import reactor.core.Disposable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -87,5 +88,25 @@ class ScheduledNewsPipelineTaskTest {
 		assertNotNull(summaryResult);
 		assertEquals(drainSummaryResult, summaryResult);
 		verify(drainNewsPipelineSummary).execute();
+	}
+
+	@Test
+	void startDoesNotScheduleSummaryLoopWhenSummaryDisabled() {
+		final var drainNewsPipelineIngestion = mock(DrainNewsPipelineIngestion.class);
+		final var drainNewsPipelineSummary = mock(DrainNewsPipelineSummary.class);
+		final var properties = new NewsPipelineProperties();
+		properties.setSummaryEnabled(false);
+		final var task = new ScheduledNewsPipelineTask(
+			drainNewsPipelineIngestion,
+			drainNewsPipelineSummary,
+			properties
+		);
+
+		when(drainNewsPipelineIngestion.execute()).thenReturn(Mono.just(new NewsPipelineDrainResult(0, 0, 0)));
+
+		task.start();
+
+		verify(drainNewsPipelineSummary, never()).execute();
+		task.stop();
 	}
 }
