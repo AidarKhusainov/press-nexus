@@ -48,6 +48,9 @@ public class RossiyskayaGazetaPopulateContentProcessor implements NewsPopulateCo
 			news.getId(), news.getTitle());
 		return webClient.get()
 			.uri(news.getLink())
+			.attribute(WebClientConfig.requestContextAttribute("news.id"), news.getId())
+			.attribute(WebClientConfig.requestContextAttribute("news.media"), news.getSource().name())
+			.attribute(WebClientConfig.requestContextAttribute("news.url"), news.getLink())
 			.headers(HtmlContentSupport::applyBrowserHeaders)
 			.retrieve()
 			.bodyToMono(String.class)

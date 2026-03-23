@@ -47,6 +47,9 @@ public class TassPopulateContentProcessor implements NewsPopulateContentProcesso
 		log.info("Получение содержания новости TASS (specialized): id={} title={}", news.getId(), news.getTitle());
 		return webClient.get()
 			.uri(news.getLink())
+			.attribute(WebClientConfig.requestContextAttribute("news.id"), news.getId())
+			.attribute(WebClientConfig.requestContextAttribute("news.media"), news.getSource().name())
+			.attribute(WebClientConfig.requestContextAttribute("news.url"), news.getLink())
 			.headers(HtmlContentSupport::applyBrowserHeaders)
 			.retrieve()
 			.bodyToMono(String.class)

@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +43,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 public class WebClientConfig {
 
 	private static final String REQUEST_ID_CONTEXT_KEY = "requestId";
+	private static final String REQUEST_CONTEXT_ATTRIBUTE_PREFIX = "requestContext.";
 
 	private final Map<HttpClientName, HttpClientProperties.ClientConfig> clientProperties;
 	private final Map<HttpClientName, Boolean> retryOnTooManyRequestsByClient;
@@ -151,23 +153,28 @@ public class WebClientConfig {
 			final var timerSample = appMetrics.startHttpClientTimer();
 			final String method = request.method().name();
 			final String client = clientName.name();
+			final String requestContext = formatRequestContext(request.attributes());
 
-			log.info("К платформе {} выполняется запрос {}: {} {}", clientName, requestId, request.method(), request.url());
+			log.info("К платформе {} выполняется запрос {}: {} {}{}",
+				clientName, requestId, request.method(), request.url(), requestContext);
 
 			return next.exchange(request)
 				.doOnNext(response -> {
 					appMetrics.httpClientResponse(client, method, response.statusCode().value(), timerSample);
-					log.info("От платформы {} получен ответ на запрос {}: {}", clientName, requestId, response.statusCode());
+					log.info("От платформы {} получен ответ на запрос {}: {}{}",
+						clientName, requestId, response.statusCode(), requestContext);
 				})
 				.doOnError(throwable -> {
 					appMetrics.httpClientFailure(client, method, throwable, timerSample);
 					if (isExpectedExternalCallError(throwable)) {
-						log.warn("От платформы {} ошибка при запросе {}: {}", clientName, requestId, summarizeThrowable(throwable));
+						log.warn("От платформы {} ошибка при запросе {}{}: {}",
+							clientName, requestId, requestContext, summarizeThrowable(throwable));
 						log.debug("Стек ошибки запроса {} к платформе {}", requestId, clientName, throwable);
 						return;
 					}
 
-					log.error("От платформы {} ошибка при запросе {}", clientName, requestId, throwable);
+					log.error("От платформы {} ошибка при запросе {}{}",
+						clientName, requestId, requestContext, throwable);
 				});
 		};
 	}
@@ -181,6 +188,7 @@ public class WebClientConfig {
 	) {
 		return (request, next) -> {
 			final var requestId = getRequestId(request.attributes());
+			final var requestContext = formatRequestContext(request.attributes());
 
 			return next.exchange(request)
 				.retryWhen(
@@ -189,16 +197,20 @@ public class WebClientConfig {
 						.filter(throwable -> isRetryableError(clientName, throwable))
 						.doBeforeRetry(retrySignal -> {
 							appMetrics.httpClientRetry(clientName.name());
-							log.warn("К платформе {} будет выполнена повторная попытка ({} из {}) запроса {}",
-								clientName, retrySignal.totalRetries() + 1, retryConfig.maxAttempts(), requestId);
+							log.warn("К платформе {} будет выполнена повторная попытка ({} из {}) запроса {}{}",
+								clientName, retrySignal.totalRetries() + 1, retryConfig.maxAttempts(), requestId, requestContext);
 						})
 						.onRetryExhaustedThrow((spec, retrySignal) -> {
-							log.error("К платформе {} не выполнился запрос {} после {} попыток",
-								clientName, requestId, retryConfig.maxAttempts(), retrySignal.failure());
+							log.error("К платформе {} не выполнился запрос {}{} после {} попыток",
+								clientName, requestId, requestContext, retryConfig.maxAttempts(), retrySignal.failure());
 							return retrySignal.failure();
 						})
 				);
 		};
+	}
+
+	public static String requestContextAttribute(final String key) {
+		return REQUEST_CONTEXT_ATTRIBUTE_PREFIX + key;
 	}
 
 	private String getRequestId(final Map<String, Object> attributes) {
@@ -267,6 +279,27 @@ public class WebClientConfig {
 			current = current.getCause();
 		}
 		return false;
+	}
+
+	String formatRequestContext(final Map<String, Object> attributes) {
+		final Map<String, String> context = new TreeMap<>();
+		for (final var entry : attributes.entrySet()) {
+			if (!entry.getKey().startsWith(REQUEST_CONTEXT_ATTRIBUTE_PREFIX) || entry.getValue() == null) {
+				continue;
+			}
+			final String value = String.valueOf(entry.getValue());
+			if (value.isBlank()) {
+				continue;
+			}
+			context.put(entry.getKey().substring(REQUEST_CONTEXT_ATTRIBUTE_PREFIX.length()), value);
+		}
+		if (context.isEmpty()) {
+			return "";
+		}
+		return " [" + context.entrySet().stream()
+			.map(entry -> entry.getKey() + "=" + entry.getValue())
+			.reduce((left, right) -> left + ", " + right)
+			.orElse("") + "]";
 	}
 
 	private static Map<HttpClientName, HttpClientProperties.ClientConfig> buildClientProperties(

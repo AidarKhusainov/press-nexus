@@ -3,8 +3,10 @@ package com.nexus.press.app.news.job;
 import jakarta.annotation.PreDestroy;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import java.time.Duration;
 import com.nexus.press.app.config.property.NewsPipelineProperties;
+import com.nexus.press.app.news.model.RawNews;
 import com.nexus.press.app.news.usecase.FetchNews;
 import com.nexus.press.app.observability.AppMetrics;
 import lombok.RequiredArgsConstructor;
@@ -26,15 +28,20 @@ public class ScheduledNewsFetchTask {
 	@EventListener(ApplicationReadyEvent.class)
 	public void start() {
 		final Duration interval = newsPipelineProperties.getDiscoveryInterval();
-		subscription = Flux.concat(
-				Flux.defer(() -> runFetchCycle("scheduler_news_fetch_initial")),
-				Flux.interval(interval)
-					.concatMap(tick -> runFetchCycle("scheduler_news_fetch_tick"))
-			)
+		subscription = scheduleFetchCycles(interval)
 			.doOnSubscribe(s -> log.info("Запущен планировщик задач для получения новостей"))
 			.subscribe(
 				null,
 				error -> log.error("Планировщик задач получения новостей остановлен из-за необработанной ошибки", error)
+			);
+	}
+
+	Flux<RawNews> scheduleFetchCycles(final Duration interval) {
+		return Flux.defer(() -> runFetchCycle("scheduler_news_fetch_initial"))
+			.concatWith(
+				Flux.defer(() -> Mono.delay(interval)
+					.thenMany(runFetchCycle("scheduler_news_fetch_tick")))
+					.repeat()
 			);
 	}
 
@@ -46,7 +53,7 @@ public class ScheduledNewsFetchTask {
 		}
 	}
 
-	Flux<?> runFetchCycle(final String cycleName) {
+	Flux<RawNews> runFetchCycle(final String cycleName) {
 		final var timerSample = appMetrics.startJobTimer();
 		return fetchNews.execute()
 			.doOnComplete(() -> appMetrics.jobSuccess(cycleName, timerSample))

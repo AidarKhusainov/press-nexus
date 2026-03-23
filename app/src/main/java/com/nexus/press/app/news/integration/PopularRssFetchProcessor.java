@@ -442,7 +442,7 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 	}
 
 	private Mono<String> fetchFeedXmlForCandidate(final FeedDefinition feed, final String feedUrl) {
-		return fetchFeedXmlViaWebClient(feedUrl)
+		return fetchFeedXmlViaWebClient(feed, feedUrl)
 			.onErrorResume(ex -> {
 				log.warn("Основной RSS запрос через WebClient не удался для {} ({}): {}. Пробую fallback HTTP client.",
 					feed.media(), feedUrl, ex.getMessage());
@@ -451,9 +451,11 @@ public class PopularRssFetchProcessor implements NewsFetchProcessor {
 			});
 	}
 
-	private Mono<String> fetchFeedXmlViaWebClient(final String feedUrl) {
+	private Mono<String> fetchFeedXmlViaWebClient(final FeedDefinition feed, final String feedUrl) {
 		return webClient.get()
 			.uri(feedUrl)
+			.attribute(WebClientConfig.requestContextAttribute("feed.media"), feed.media().name())
+			.attribute(WebClientConfig.requestContextAttribute("feed.url"), feedUrl)
 			.headers(headers -> {
 				headers.set("User-Agent",
 					"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "

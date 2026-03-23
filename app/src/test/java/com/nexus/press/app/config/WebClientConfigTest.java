@@ -7,6 +7,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.HashMap;
 import com.nexus.press.app.config.property.HttpClientName;
 import com.nexus.press.app.config.property.HttpClientProperties;
 import com.nexus.press.app.observability.AppMetrics;
@@ -110,6 +111,23 @@ class WebClientConfigTest {
 		assertEquals("handshake timed out", config.summarizeThrowable(new SslHandshakeTimeoutException("handshake timed out")));
 	}
 
+	@Test
+	void formatRequestContextIncludesCustomRequestAttributes() {
+		final var config = new WebClientConfig(
+			defaultProperties(),
+			retryPolicies(false),
+			APP_METRICS
+		);
+		final Map<String, Object> attributes = new HashMap<>();
+		attributes.put(WebClientConfig.requestContextAttribute("feed.media"), "RIA");
+		attributes.put(WebClientConfig.requestContextAttribute("feed.url"), "https://ria.ru/export/rss2/index.xml");
+
+		assertEquals(
+			" [feed.media=RIA, feed.url=https://ria.ru/export/rss2/index.xml]",
+			config.formatRequestContext(attributes)
+		);
+	}
+
 	private static HttpClientProperties defaultProperties() {
 		final var cfg = new HttpClientProperties.ClientConfig(
 			"http://provider",
@@ -119,6 +137,7 @@ class WebClientConfigTest {
 		return new HttpClientProperties(Map.of(
 			HttpClientName.GEMINI, cfg,
 			HttpClientName.GROQ, cfg,
+			HttpClientName.NEWS, cfg,
 			HttpClientName.TELEGRAM, cfg
 		));
 	}

@@ -73,6 +73,8 @@ public class ReutersGoogleNewsPopulateContentProcessor implements NewsPopulateCo
 	private Mono<String> fetchHtml(final String url) {
 		return webClient.get()
 			.uri(url)
+			.attribute(WebClientConfig.requestContextAttribute("news.media"), Media.REUTERS.name())
+			.attribute(WebClientConfig.requestContextAttribute("news.url"), url)
 			.headers(HtmlContentSupport::applyBrowserHeaders)
 			.retrieve()
 			.bodyToMono(String.class);
