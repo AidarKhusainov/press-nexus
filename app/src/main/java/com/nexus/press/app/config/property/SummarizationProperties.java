@@ -2,7 +2,7 @@ package com.nexus.press.app.config.property;
 
 import java.time.Duration;
 import java.util.List;
-import com.nexus.press.app.service.ai.summ.SummarizationProvider;
+import com.nexus.press.app.ai.model.SummarizationProvider;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "press.ai.summarization")

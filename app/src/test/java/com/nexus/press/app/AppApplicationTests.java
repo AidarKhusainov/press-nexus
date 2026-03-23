@@ -3,10 +3,10 @@ package com.nexus.press.app;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import com.nexus.press.app.service.scheduler.ScheduledDailyBriefTask;
-import com.nexus.press.app.service.scheduler.ScheduledNewsFetchTask;
-import com.nexus.press.app.service.scheduler.ScheduledNewsPipelineTask;
-import com.nexus.press.app.service.scheduler.ScheduledProductReportTask;
+import com.nexus.press.app.analytics.job.ScheduledProductReportTask;
+import com.nexus.press.app.news.job.ScheduledNewsFetchTask;
+import com.nexus.press.app.news.job.ScheduledNewsPipelineTask;
+import com.nexus.press.app.telegram.job.ScheduledTelegramDailyBriefTask;
 
 @SpringBootTest(properties = {
 	"spring.liquibase.enabled=false",
@@ -24,7 +24,7 @@ class AppApplicationTests {
 	private ScheduledNewsPipelineTask scheduledNewsPipelineTask;
 
 	@MockBean
-	private ScheduledDailyBriefTask scheduledDailyBriefTask;
+	private ScheduledTelegramDailyBriefTask scheduledTelegramDailyBriefTask;
 
 	@MockBean
 	private ScheduledProductReportTask scheduledProductReportTask;

@@ -7,9 +7,9 @@
 ## Architecture (Current)
 - Entry point: `app/src/main/java/com/nexus/press/app/AppApplication.java:1`.
 - Config/HTTP clients/AI: `app/src/main/java/com/nexus/press/app/config/**`.
-- News (ETL stages): `app/src/main/java/com/nexus/press/app/service/news/**`.
+- News (ETL stages): `app/src/main/java/com/nexus/press/app/news/**`.
 - Queues and consumers: `app/src/main/java/com/nexus/press/app/service/queue/**`.
-- Scheduler: `app/src/main/java/com/nexus/press/app/service/scheduler/**`.
+- Scheduler/jobs: `app/src/main/java/com/nexus/press/app/*/job/**`.
 - Utilities (chunking/vectors): `app/src/main/java/com/nexus/press/app/util/**`.
 - Settings: `app/src/main/resources/application.properties:1`.
 - External services: RIA, NYTimes RSS, Jina Reader; ML backends — Ollama for embeddings and configurable hosted summarization providers.

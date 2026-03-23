@@ -2,33 +2,36 @@ package com.nexus.press.app.web;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import com.nexus.press.app.config.property.SimilarityProperties;
+import com.nexus.press.app.analytics.format.ProductReportFormatter;
+import com.nexus.press.app.analytics.model.ProductDailyReport;
+import com.nexus.press.app.analytics.model.PremiumIntentSegmentReport;
+import com.nexus.press.app.analytics.usecase.BuildProductDailyReport;
+import com.nexus.press.app.analytics.web.ProductReportController;
+import com.nexus.press.app.brief.format.DailyBriefFormatter;
+import com.nexus.press.app.brief.model.BriefImportance;
+import com.nexus.press.app.brief.model.DailyBrief;
+import com.nexus.press.app.brief.model.DailyBriefItem;
+import com.nexus.press.app.brief.usecase.BuildDailyBrief;
+import com.nexus.press.app.brief.web.BriefController;
 import com.nexus.press.app.config.RequestAuthenticationConfiguration;
-import com.nexus.press.app.service.analytics.ProductDailyReport;
-import com.nexus.press.app.service.analytics.ProductReportService;
-import com.nexus.press.app.service.brief.DailyBriefFormatter;
-import com.nexus.press.app.service.brief.DailyBriefService;
-import com.nexus.press.app.service.brief.model.BriefImportance;
-import com.nexus.press.app.service.brief.model.DailyBrief;
-import com.nexus.press.app.service.brief.model.DailyBriefItem;
-import com.nexus.press.app.service.delivery.DailyBriefDeliveryService;
-import com.nexus.press.app.service.feedback.FeedbackEventType;
-import com.nexus.press.app.service.feedback.FeedbackEventService;
-import com.nexus.press.app.service.news.NewsClusteringService;
-import com.nexus.press.app.service.news.NewsSimilarityStore;
-import com.nexus.press.app.service.news.ReactiveNewsSimilarityStore;
-import com.nexus.press.app.service.profile.TelegramOnboardingBotService;
-import com.nexus.press.app.controller.BriefController;
-import com.nexus.press.app.controller.FeedbackController;
-import com.nexus.press.app.controller.ProductReportController;
-import com.nexus.press.app.controller.SimilarityController;
-import com.nexus.press.app.controller.TelegramWebhookController;
+import com.nexus.press.app.config.property.SimilarityProperties;
+import com.nexus.press.app.feedback.model.FeedbackEventType;
+import com.nexus.press.app.feedback.usecase.RecordTelegramFeedback;
+import com.nexus.press.app.feedback.web.FeedbackController;
+import com.nexus.press.app.news.model.NewsCluster;
+import com.nexus.press.app.news.model.SimilarNewsItem;
+import com.nexus.press.app.news.usecase.BuildNewsClusters;
+import com.nexus.press.app.news.usecase.FindNewsCluster;
+import com.nexus.press.app.news.usecase.FindSimilarNews;
+import com.nexus.press.app.news.web.SimilarityController;
+import com.nexus.press.app.telegram.usecase.DeliverDailyBriefToTelegramUsers;
+import com.nexus.press.app.telegram.usecase.HandleTelegramUpdate;
+import com.nexus.press.app.telegram.web.TelegramWebhookController;
 import com.nexus.press.app.web.generated.api.BriefApiController;
 import com.nexus.press.app.web.generated.api.FeedbackApiController;
 import com.nexus.press.app.web.generated.api.ProductReportApiController;
@@ -70,27 +73,31 @@ class ApiContractTest {
 	private WebTestClient webTestClient;
 
 	@MockBean
-	private DailyBriefService dailyBriefService;
+	private BuildDailyBrief buildDailyBrief;
 	@MockBean
 	private DailyBriefFormatter dailyBriefFormatter;
 	@MockBean
-	private DailyBriefDeliveryService dailyBriefDeliveryService;
+	private DeliverDailyBriefToTelegramUsers deliverDailyBriefToTelegramUsers;
 	@MockBean
-	private FeedbackEventService feedbackEventService;
+	private RecordTelegramFeedback recordTelegramFeedback;
 	@MockBean
-	private ProductReportService productReportService;
+	private BuildProductDailyReport buildProductDailyReport;
 	@MockBean
-	private NewsClusteringService newsClusteringService;
+	private ProductReportFormatter productReportFormatter;
+	@MockBean
+	private BuildNewsClusters buildNewsClusters;
 	@MockBean
 	private SimilarityProperties similarityProperties;
 	@MockBean
-	private ReactiveNewsSimilarityStore reactiveNewsSimilarityStore;
+	private FindNewsCluster findNewsCluster;
 	@MockBean
-	private TelegramOnboardingBotService telegramOnboardingBotService;
+	private FindSimilarNews findSimilarNews;
+	@MockBean
+	private HandleTelegramUpdate handleTelegramUpdate;
 
 	@Test
 	void dailyBriefJsonContract() {
-		given(dailyBriefService.buildBrief(any(Duration.class), anyInt(), anyString())).willReturn(Mono.just(sampleBrief()));
+		given(buildDailyBrief.execute(any(BuildDailyBrief.Request.class))).willReturn(Mono.just(sampleBrief()));
 
 		webTestClient.get()
 			.uri("/api/brief/daily?hours=24&limit=2&lang=ru")
@@ -105,7 +112,7 @@ class ApiContractTest {
 
 	@Test
 	void dailyBriefTextContract() {
-		given(dailyBriefService.buildBrief(any(Duration.class), anyInt(), anyString())).willReturn(Mono.just(sampleBrief()));
+		given(buildDailyBrief.execute(any(BuildDailyBrief.Request.class))).willReturn(Mono.just(sampleBrief()));
 		given(dailyBriefFormatter.toTelegramMessage(any(DailyBrief.class))).willReturn("Daily brief text");
 
 		webTestClient.get()
@@ -118,7 +125,7 @@ class ApiContractTest {
 
 	@Test
 	void sendDailyBriefContract() {
-		given(dailyBriefDeliveryService.deliverNow()).willReturn(Mono.just(3));
+		given(deliverDailyBriefToTelegramUsers.execute()).willReturn(Mono.just(3));
 
 		webTestClient.post()
 			.uri("/api/brief/daily/send")
@@ -130,7 +137,7 @@ class ApiContractTest {
 
 	@Test
 	void feedbackContract() {
-		given(feedbackEventService.recordTelegramFeedback(
+		given(recordTelegramFeedback.execute(
 			anyString(),
 			any(FeedbackEventType.class),
 			any(),
@@ -164,8 +171,8 @@ class ApiContractTest {
 
 	@Test
 	void productReportContract() {
-		given(productReportService.buildDailyReport(any())).willReturn(Mono.just(sampleProductReport()));
-		given(productReportService.buildDailyReportText(any())).willReturn(Mono.just("report text"));
+		given(buildProductDailyReport.execute(any())).willReturn(Mono.just(sampleProductReport()));
+		given(productReportFormatter.toText(any(ProductDailyReport.class))).willReturn("report text");
 
 		webTestClient.get()
 			.uri("/api/analytics/product-report/daily")
@@ -190,12 +197,12 @@ class ApiContractTest {
 		given(similarityProperties.getTopN()).willReturn(5);
 		given(similarityProperties.getMinScore()).willReturn(0.6);
 		given(similarityProperties.getClusterMinScore()).willReturn(0.7);
-		given(reactiveNewsSimilarityStore.topSimilar(anyString(), anyInt(), anyDouble()))
-			.willReturn(Flux.just(new NewsSimilarityStore.SimilarItem("n2", 0.92)));
+		given(findSimilarNews.execute(anyString(), anyInt(), anyDouble()))
+			.willReturn(Flux.just(new SimilarNewsItem("n2", 0.92)));
 
-		final var cluster = new NewsClusteringService.Cluster(Set.of("n1", "n2"), "n1");
-		given(newsClusteringService.buildClusters(anyDouble())).willReturn(Mono.just(List.of(cluster)));
-		given(newsClusteringService.clusterOf(anyString(), anyDouble())).willReturn(Mono.just(cluster));
+		final var cluster = new NewsCluster(Set.of("n1", "n2"), "n1");
+		given(buildNewsClusters.execute(anyDouble())).willReturn(Mono.just(List.of(cluster)));
+		given(findNewsCluster.execute(anyString(), anyDouble())).willReturn(Mono.just(cluster));
 
 		webTestClient.get()
 			.uri("/api/news/n1/similar")
@@ -222,7 +229,7 @@ class ApiContractTest {
 
 	@Test
 	void telegramWebhookContract() {
-		given(telegramOnboardingBotService.handleUpdate(any(Map.class))).willReturn(Mono.empty());
+		given(handleTelegramUpdate.execute(any(Map.class))).willReturn(Mono.empty());
 
 		webTestClient.post()
 			.uri("/api/telegram/webhook")
@@ -278,8 +285,8 @@ class ApiContractTest {
 			4,
 			40.0,
 			List.of(
-				new com.nexus.press.app.service.analytics.PremiumIntentSegmentReport("economy", 50, 10, 12, 20.0),
-				new com.nexus.press.app.service.analytics.PremiumIntentSegmentReport("news", 50, 0, 0, 0.0)
+				new PremiumIntentSegmentReport("economy", 50, 10, 12, 20.0),
+				new PremiumIntentSegmentReport("news", 50, 0, 0, 0.0)
 			)
 		);
 	}

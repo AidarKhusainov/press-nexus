@@ -25,11 +25,11 @@ Last updated: 2026-03-09
 
 | Epic | Task from plan | Status | Code evidence |
 |---|---|---|---|
-| A | Source registry + periodic fetch | DONE | `service/news/platform/*`, `service/scheduler/ScheduledNewsFetchTask.java` |
-| A | Article normalization (title/text/source/time/category/url) | DONE | `service/news/NewsPopulateContentService.java`, `service/news/NewsPersistenceService.java` |
+| A | Source registry + periodic fetch | DONE | `news/integration/*`, `news/job/ScheduledNewsFetchTask.java` |
+| A | Article normalization (title/text/source/time/category/url) | DONE | `news/usecase/PopulateNewsContent.java`, `news/policy/NewsContentCleaner.java`, `news/persistence/*` |
 | A | Dedup (URL + similarity) | DONE | URL/`external_id` idempotency in DB, representative-only summarization via clustering, and brief-time near-duplicate suppression via similarity/text fallback in `service/brief/DailyBriefService.java` |
 | A | Criterion: -70% duplicates | CHECK | Separate baseline vs current report/metric required |
-| B | Event clustering | DONE | `service/news/NewsClusteringService.java`, `cluster*` tables |
+| B | Event clustering | DONE | `news/usecase/BuildNewsClusters.java`, `news/usecase/FindNewsCluster.java`, `news/persistence/repository/PostgresNewsSimilarityRepository.java` |
 | B | must/good ranking | DONE | `service/brief/DailyBriefService.java` (`scoreImportance`) |
 | B | 3-block summary | DONE | `service/brief/DailyBriefService.java`, `service/brief/DailyBriefFormatter.java` |
 | B | Emotional filter | DONE | Dedicated tone moderation quality gate in `service/brief/BriefToneModerationService.java`, integrated into `service/brief/DailyBriefService.java`; moderation metric `press.brief.tone.moderation` in `observability/AppMetrics.java` |
@@ -38,11 +38,11 @@ Last updated: 2026-03-09
 | C | User preference storage | DONE | Personalized build and delivery by `topics`/`digest_frequency`/`last_delivery_at`: `service/profile/UserProfileService.java`, `service/brief/DailyBriefService.java`, `service/delivery/DailyBriefDeliveryService.java` |
 | C | Scheduled digest delivery | DONE | `service/delivery/*`, `service/scheduler/ScheduledDailyBriefTask.java` |
 | C | Onboarding criterion < 1 min | CHECK | Completion time is now measured via metric `press.onboarding.completion.seconds` and onboarding completion logs; target validation requires real beta data |
-| D | Useful/Noise/Anxious buttons | DONE | `service/delivery/DailyBriefDeliveryService.java` (inline keyboard), `service/profile/TelegramOnboardingBotService.java` (callback handler), `service/feedback/FeedbackEventService.java` + `web/FeedbackController.java` (write API to `feedback_events`) |
-| D | delivery/click/feedback/unsubscribe events | DONE | `service/delivery/DailyBriefDeliveryService.java` (click/unsubscribe inline callbacks), `service/profile/TelegramOnboardingBotService.java` (`click` URL handoff + `/unsubscribe`/`/stop` + unsubscribe callback), `service/profile/UserProfileService.java` (`digest_enabled` toggle), запись в `feedback_events` через `service/feedback/FeedbackEventService.java` |
+| D | Useful/Noise/Anxious buttons | DONE | `telegram/usecase/DeliverDailyBriefToTelegramUsers.java` (inline keyboard), `telegram/usecase/HandleTelegramUpdate.java` (callback handler), `feedback/usecase/RecordTelegramFeedback.java` + `feedback/web/FeedbackController.java` (write API to `feedback_events`) |
+| D | delivery/click/feedback/unsubscribe events | DONE | `telegram/usecase/DeliverDailyBriefToTelegramUsers.java` (click/unsubscribe inline callbacks), `telegram/usecase/HandleTelegramUpdate.java` (`click` URL handoff + `/unsubscribe`/`/stop` + unsubscribe callback), `service/profile/UserProfileService.java` (`digest_enabled` toggle), запись в `feedback_events` через `feedback/usecase/RecordTelegramFeedback.java` |
 | D | D1/D7 + quality dashboard | DONE | Product snapshot gauges in `observability/AppMetrics.java` + scheduler publish in `service/scheduler/ScheduledProductReportTask.java` + dashboard `monitoring/grafana/dashboards/press-nexus-product-analytics.json` |
 | D | Daily auto-report | DONE | Scheduler `service/scheduler/ScheduledProductReportTask.java` + formatter `service/analytics/ProductReportFormatter.java` implemented |
-| E | Premium screen/message 199/299/399 | DONE | `/premium` now states that beta is free and no paid tier is active in `service/profile/TelegramOnboardingBotService.java` |
+| E | Premium screen/message 199/299/399 | DONE | `/premium` now states that beta is free and no paid tier is active in `telegram/usecase/HandleTelegramUpdate.java` |
 | E | Collect "ready to pay" intent | DONE | Old `pi|price|segment` callbacks are kept backward-compatible, but now respond with a free-beta message instead of storing new intent events |
 | E | Intent conversion by segments | DONE | Segment breakdown in `/api/analytics/product-report/daily` and text report via `service/analytics/ProductReportService.java`, `service/analytics/ProductReportFormatter.java` |
 

@@ -1,6 +1,6 @@
 package com.nexus.press.app;
 
-import com.nexus.press.app.service.ai.embed.OllamaNomicEmbeddingService;
+import com.nexus.press.app.ai.integration.embed.OllamaNomicEmbeddingService;
 import com.nexus.press.app.util.VectorUtils;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;

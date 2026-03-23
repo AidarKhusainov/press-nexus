@@ -4,25 +4,27 @@ import reactor.core.publisher.Mono;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import com.nexus.press.app.analytics.format.ProductReportFormatter;
+import com.nexus.press.app.analytics.usecase.BuildProductDailyReport;
+import com.nexus.press.app.analytics.web.ProductReportController;
+import com.nexus.press.app.brief.format.DailyBriefFormatter;
+import com.nexus.press.app.brief.model.BriefImportance;
+import com.nexus.press.app.brief.model.DailyBrief;
+import com.nexus.press.app.brief.model.DailyBriefItem;
+import com.nexus.press.app.brief.usecase.BuildDailyBrief;
+import com.nexus.press.app.brief.web.BriefController;
 import com.nexus.press.app.config.RequestAuthenticationConfiguration;
 import com.nexus.press.app.config.RequestAuthenticationFilter;
 import com.nexus.press.app.config.property.SimilarityProperties;
-import com.nexus.press.app.controller.BriefController;
-import com.nexus.press.app.controller.FeedbackController;
-import com.nexus.press.app.controller.ProductReportController;
-import com.nexus.press.app.controller.SimilarityController;
-import com.nexus.press.app.controller.TelegramWebhookController;
-import com.nexus.press.app.service.analytics.ProductReportService;
-import com.nexus.press.app.service.brief.DailyBriefFormatter;
-import com.nexus.press.app.service.brief.DailyBriefService;
-import com.nexus.press.app.service.brief.model.BriefImportance;
-import com.nexus.press.app.service.brief.model.DailyBrief;
-import com.nexus.press.app.service.brief.model.DailyBriefItem;
-import com.nexus.press.app.service.delivery.DailyBriefDeliveryService;
-import com.nexus.press.app.service.feedback.FeedbackEventService;
-import com.nexus.press.app.service.news.NewsClusteringService;
-import com.nexus.press.app.service.news.ReactiveNewsSimilarityStore;
-import com.nexus.press.app.service.profile.TelegramOnboardingBotService;
+import com.nexus.press.app.feedback.usecase.RecordTelegramFeedback;
+import com.nexus.press.app.feedback.web.FeedbackController;
+import com.nexus.press.app.news.usecase.BuildNewsClusters;
+import com.nexus.press.app.news.usecase.FindNewsCluster;
+import com.nexus.press.app.news.usecase.FindSimilarNews;
+import com.nexus.press.app.news.web.SimilarityController;
+import com.nexus.press.app.telegram.usecase.DeliverDailyBriefToTelegramUsers;
+import com.nexus.press.app.telegram.usecase.HandleTelegramUpdate;
+import com.nexus.press.app.telegram.web.TelegramWebhookController;
 import com.nexus.press.app.web.generated.api.BriefApiController;
 import com.nexus.press.app.web.generated.api.FeedbackApiController;
 import com.nexus.press.app.web.generated.api.ProductReportApiController;
@@ -38,8 +40,6 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 
 @WebFluxTest(controllers = {
@@ -68,27 +68,31 @@ class ApiSecurityTest {
 	private WebTestClient webTestClient;
 
 	@MockBean
-	private DailyBriefService dailyBriefService;
+	private BuildDailyBrief buildDailyBrief;
 	@MockBean
 	private DailyBriefFormatter dailyBriefFormatter;
 	@MockBean
-	private DailyBriefDeliveryService dailyBriefDeliveryService;
+	private DeliverDailyBriefToTelegramUsers deliverDailyBriefToTelegramUsers;
 	@MockBean
-	private FeedbackEventService feedbackEventService;
+	private RecordTelegramFeedback recordTelegramFeedback;
 	@MockBean
-	private ProductReportService productReportService;
+	private BuildProductDailyReport buildProductDailyReport;
 	@MockBean
-	private NewsClusteringService newsClusteringService;
+	private ProductReportFormatter productReportFormatter;
+	@MockBean
+	private BuildNewsClusters buildNewsClusters;
 	@MockBean
 	private SimilarityProperties similarityProperties;
 	@MockBean
-	private ReactiveNewsSimilarityStore reactiveNewsSimilarityStore;
+	private FindNewsCluster findNewsCluster;
 	@MockBean
-	private TelegramOnboardingBotService telegramOnboardingBotService;
+	private FindSimilarNews findSimilarNews;
+	@MockBean
+	private HandleTelegramUpdate handleTelegramUpdate;
 
 	@Test
 	void publicBriefEndpointRemainsAccessibleWithoutApiKey() {
-		given(dailyBriefService.buildBrief(any(), anyInt(), anyString())).willReturn(Mono.just(sampleBrief()));
+		given(buildDailyBrief.execute(any(BuildDailyBrief.Request.class))).willReturn(Mono.just(sampleBrief()));
 
 		webTestClient.get()
 			.uri("/api/brief/daily")
@@ -110,7 +114,7 @@ class ApiSecurityTest {
 
 	@Test
 	void protectedSendEndpointAcceptsValidApiKey() {
-		given(dailyBriefDeliveryService.deliverNow()).willReturn(Mono.just(2));
+		given(deliverDailyBriefToTelegramUsers.execute()).willReturn(Mono.just(2));
 
 		webTestClient.post()
 			.uri("/api/brief/daily/send")
@@ -151,7 +155,7 @@ class ApiSecurityTest {
 
 	@Test
 	void telegramWebhookAcceptsValidSecret() {
-		given(telegramOnboardingBotService.handleUpdate(any(Map.class))).willReturn(Mono.empty());
+		given(handleTelegramUpdate.execute(any(Map.class))).willReturn(Mono.empty());
 
 		webTestClient.post()
 			.uri("/api/telegram/webhook")

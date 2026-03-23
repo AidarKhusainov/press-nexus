@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import com.nexus.press.app.service.ai.summ.SummarizationProvider;
+import com.nexus.press.app.ai.model.SummarizationProvider;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
